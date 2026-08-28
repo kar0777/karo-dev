@@ -162,11 +162,15 @@ export class StripeBillingProvider implements BillingProvider {
           'This plan has no Stripe price configured. An administrator needs to set it in Admin → Plans.',
         );
       }
+      const discount = input.discount
+        ? { coupon: await this.ensurePercentOffCoupon(input.discount) }
+        : undefined;
       session = await this.stripe().checkout.sessions.create(
         {
           ...common,
           mode: 'subscription',
           line_items: [{ price: input.priceId, quantity: 1 }],
+          ...(discount ? { discounts: [discount] } : {}),
           subscription_data: {
             metadata: { karo_team_id: input.teamId, karo_plan_id: input.planId ?? '' },
             ...(input.trialDays ? { trial_period_days: input.trialDays } : {}),
@@ -181,6 +185,34 @@ export class StripeBillingProvider implements BillingProvider {
     }
 
     return { id: session.id, url: session.url, completedImmediately: false };
+  }
+
+  /**
+   * Creates (once) the Stripe coupon backing a Karo promo discount. The id is
+   * derived from the Karo coupon id, so re-running is idempotent at Stripe's
+   * own level — a second checkout with the same promo reuses the object.
+   */
+  private async ensurePercentOffCoupon(discount: {
+    couponId: string;
+    percentOff: number;
+  }): Promise<string> {
+    const id = `karo_${discount.couponId.toLowerCase()}`;
+    try {
+      await this.stripe().coupons.create({
+        id,
+        percent_off: discount.percentOff,
+        duration: 'once',
+        name: `Karo promo (-${discount.percentOff}%)`,
+        metadata: { karo_coupon_id: discount.couponId },
+      });
+    } catch (error) {
+      // `resource_already_exists` is the expected path on every checkout after
+      // the first; anything else is a real failure.
+      if (!(error instanceof Stripe.errors.StripeError) || error.code !== 'resource_already_exists') {
+        throw error;
+      }
+    }
+    return id;
   }
 
   async createPortalSession(input: CreatePortalSessionInput): Promise<PortalSession> {

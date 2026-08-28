@@ -688,6 +688,86 @@ export const topups = pgTable(
   ],
 );
 
+/* ------------------------------------------------------------------ *
+ *  Coupons — admin-minted promo codes
+ * ------------------------------------------------------------------ */
+
+export const couponKindEnum = pgEnum('coupon_kind', ['credit', 'plan_discount']);
+
+/**
+ * A promo code an operator mints in Admin → Coupons. Two kinds:
+ *
+ *  · `credit` — grants `amountMicroUsd` of bonus balance the moment it is
+ *    redeemed in Billing (never at the Stripe checkout — promo codes there
+ *    would be Stripe's, not Karo's). `creditFor` labels what the credit is
+ *    meant to buy ('tokens' | 'compute' | 'any'); it is descriptive, since
+ *    everything draws the same USD balance.
+ *  · `plan_discount` — `percentOff` a specific `planTier` at subscription
+ *    checkout, for handing someone a personal deal.
+ *
+ * `maxRedemptions` caps total activations across accounts; `maxPerTeam` caps
+ * how often one team may redeem the same code.
+ */
+export const coupons = pgTable(
+  'coupons',
+  {
+    id: id(),
+    /** Stored uppercase; redemption is case-insensitive. */
+    code: text('code').notNull(),
+    name: text('name').notNull(),
+    kind: couponKindEnum('kind').notNull(),
+    amountMicroUsd: money('amount_micro_usd'),
+    creditFor: text('credit_for').notNull().default('any'),
+    percentOff: integer('percent_off'),
+    planTier: planTierEnum('plan_tier'),
+    maxRedemptions: integer('max_redemptions').notNull().default(1),
+    maxPerTeam: integer('max_per_team').notNull().default(1),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    isActive: boolean('is_active').notNull().default(true),
+    createdById: text('created_by_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('coupons_code_unique').on(t.code)],
+);
+
+export const couponRedemptionStatusEnum = pgEnum('coupon_redemption_status', [
+  /** Granted and not yet consumed. A credit is `used` immediately; a plan
+   * discount stays `active` until it prices a checkout. */
+  'active',
+  'used',
+]);
+
+export const couponRedemptions = pgTable(
+  'coupon_redemptions',
+  {
+    id: id(),
+    couponId: text('coupon_id')
+      .notNull()
+      .references(() => coupons.id, { onDelete: 'cascade' }),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    redeemedById: text('redeemed_by_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    kind: couponKindEnum('kind').notNull(),
+    /** Credit granted (credit kind), or the percent locked in at redemption. */
+    valueMicroUsd: money('value_micro_usd'),
+    percentOff: integer('percent_off'),
+    planTier: planTierEnum('plan_tier'),
+    status: couponRedemptionStatusEnum('status').notNull().default('active'),
+    topupId: text('topup_id').references(() => topups.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('coupon_redemptions_coupon_idx').on(t.couponId),
+    index('coupon_redemptions_team_idx').on(t.teamId, t.status),
+  ],
+);
+
 export const invoices = pgTable(
   'invoices',
   {
@@ -1822,6 +1902,9 @@ export type SandboxSession = typeof sandboxSessions.$inferSelect;
 export type TerminalSession = typeof terminalSessions.$inferSelect;
 export type ByosWorker = typeof byosWorkers.$inferSelect;
 export type ByosCommand = typeof byosCommands.$inferSelect;
+export type Coupon = typeof coupons.$inferSelect;
+export type NewCoupon = typeof coupons.$inferInsert;
+export type CouponRedemption = typeof couponRedemptions.$inferSelect;
 export type NewByosCommand = typeof byosCommands.$inferInsert;
 export type Provider = typeof providers.$inferSelect;
 export type Model = typeof models.$inferSelect;

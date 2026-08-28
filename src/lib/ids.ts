@@ -49,6 +49,8 @@ export const ID_PREFIX = {
   worker: 'wkr',
   incident: 'inc',
   task: 'tsk',
+  coupon: 'cpn',
+  couponRedemption: 'cpr',
 } as const;
 
 export type IdPrefixKey = keyof typeof ID_PREFIX;

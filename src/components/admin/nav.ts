@@ -8,6 +8,7 @@ import {
   ReceiptText,
   ScrollText,
   Settings2,
+  TicketPercent,
   ShieldAlert,
   Users,
 } from 'lucide-react';
@@ -52,6 +53,12 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         label: 'Costs',
         description: 'Unit economics and break-even',
         icon: Coins,
+      },
+      {
+        href: '/admin/coupons',
+        label: 'Coupons',
+        description: 'Promo codes: bonus credit and plan discounts',
+        icon: TicketPercent,
       },
     ],
   },

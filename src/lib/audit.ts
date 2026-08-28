@@ -68,6 +68,7 @@ export const AUDIT_ACTIONS = {
 
   billingCheckout: 'billing.checkout',
   billingTopup: 'billing.topup',
+  billingCouponRedeem: 'billing.coupon_redeem',
   billingPlanChange: 'billing.plan_change',
   billingCancel: 'billing.cancel',
   billingWebhook: 'billing.webhook',
@@ -94,6 +95,8 @@ export const AUDIT_ACTIONS = {
   adminUserRoleChange: 'admin.user_role_change',
   adminIncidentUpdate: 'admin.incident_update',
   adminCatalogSync: 'admin.catalog_sync',
+  adminCouponCreate: 'admin.coupon_create',
+  adminCouponUpdate: 'admin.coupon_update',
 
   cronTick: 'cron.tick',
 
@@ -156,6 +159,7 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
 
   'billing.checkout': 'Checkout started',
   'billing.topup': 'Balance topped up',
+  'billing.coupon_redeem': 'Promo code redeemed',
   'billing.plan_change': 'Plan changed',
   'billing.cancel': 'Subscription cancelled',
   'billing.webhook': 'Billing webhook processed',
@@ -182,6 +186,8 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   'admin.user_role_change': 'Platform role changed',
   'admin.incident_update': 'Incident updated',
   'admin.catalog_sync': 'Model catalogue synced',
+  'admin.coupon_create': 'Promo code created',
+  'admin.coupon_update': 'Promo code updated',
 
   'cron.tick': 'Scheduled maintenance tick',
 

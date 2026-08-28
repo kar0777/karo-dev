@@ -1,6 +1,7 @@
 'use client';
 
 import { Wallet } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
 import {
@@ -22,6 +23,7 @@ import { Input, InputAddon, InputGroup } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { cn, formatMicroUsd } from '@/lib/utils';
+import { describeError } from '@/lib/client/api';
 
 /**
  * Pay-as-you-go balance and top-ups.
@@ -252,6 +254,8 @@ export function BalanceCard(props: BalanceCardProps) {
           </div>
         </div>
 
+        <PromoCode canManage={props.canManage} />
+
         <Separator />
 
         <div className="flex flex-col gap-3">
@@ -335,5 +339,92 @@ export function BalanceCard(props: BalanceCardProps) {
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Promo codes
+ * ------------------------------------------------------------------ */
+
+/**
+ * The single place a Karo coupon is redeemed: here, in Billing — never at the
+ * payment page. A credit lands on the balance at once; a plan discount is
+ * recorded and prices the next subscription checkout for that tier.
+ */
+function PromoCode({ canManage }: { canManage: boolean }) {
+  const router = useRouter();
+  const [code, setCode] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [message, setMessage] = React.useState<{ ok: boolean; text: string } | null>(null);
+
+  async function redeem() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await postJson<{
+        kind: 'credit' | 'plan_discount';
+        amountMicroUsd?: number;
+        percentOff?: number;
+        planTier?: string;
+      }>('/api/billing/coupons/redeem', { code: code.trim() });
+
+      if (result.kind === 'credit') {
+        setMessage({
+          ok: true,
+          text: `Credited ${formatMicroUsd(result.amountMicroUsd ?? 0)} of bonus balance.`,
+        });
+      } else {
+        setMessage({
+          ok: true,
+          text: `${result.percentOff}% off the ${result.planTier} plan is locked in — it will price your next subscription checkout.`,
+        });
+      }
+      setCode('');
+      router.refresh();
+    } catch (error) {
+      setMessage({ ok: false, text: describeError(error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div>
+      <p className="mb-1.5 text-[12px] font-medium text-fg">Have a promo code?</p>
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void redeem();
+        }}
+      >
+        <Field className="min-w-0 flex-1">
+          <FieldLabel htmlFor="promo-code">Promo code</FieldLabel>
+          <Input
+            id="promo-code"
+            autoComplete="off"
+            placeholder="KARO-XXXX-XXXX"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            disabled={!canManage || busy}
+          />
+        </Field>
+        <Button size="sm" type="submit" loading={busy} disabled={!canManage || !code.trim()}>
+          Apply
+        </Button>
+      </form>
+      {message ? (
+        <p
+          className={cn(
+            'mt-1.5 text-[11.5px] leading-snug',
+            message.ok ? 'text-primary' : 'text-danger',
+          )}
+        >
+          {message.text}
+        </p>
+      ) : (
+        <FieldHint>Codes are applied here in Billing — bonus credit or a plan discount.</FieldHint>
+      )}
+    </div>
   );
 }

@@ -21,7 +21,12 @@ export type CreateCheckoutSessionInput = {
   trialDays?: number;
   /** One-off top-up, integer micro-USD. */
   amountMicroUsd?: number;
-  couponCode?: string | null;
+  /**
+   * An admin-minted plan discount locked in by a redeemed promo code, priced
+   * into THIS checkout session. (Codes typed on the payment page itself are
+   * Stripe promotion codes, governed by `allow_promotion_codes`.)
+   */
+  discount?: { couponId: string; percentOff: number } | null;
   successUrl: string;
   cancelUrl: string;
   idempotencyKey: string;

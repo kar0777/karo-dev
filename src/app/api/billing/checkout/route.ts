@@ -8,6 +8,7 @@ import { ConflictError, NotFoundError } from '@/lib/api/errors';
 import { json } from '@/lib/api/responses';
 import { AUDIT_ACTIONS } from '@/lib/audit';
 import { getActiveTeam } from '@/lib/auth/guards';
+import { activePlanDiscount } from '@/lib/billing/coupons';
 import { getBillingProvider } from '@/lib/billing';
 import { db } from '@/lib/db';
 import { plans, subscriptions } from '@/lib/db/schema';
@@ -78,6 +79,12 @@ export const POST = defineHandler(
     const priceId =
       input.interval === 'year' ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly;
 
+    // An operator-granted promo discount (redeemed in Billing) prices this
+    // checkout. Pay-as-you-go never reaches here, and a team with an active
+    // subscription is refused above, so a discount can ride at most one
+    // session per redemption window.
+    const discount = plan.comingSoon ? null : await activePlanDiscount(team.id, plan.tier);
+
     const provider = getBillingProvider();
     const idempotencyKey = billingIdempotencyKey('checkout', [
       team.id,
@@ -96,6 +103,7 @@ export const POST = defineHandler(
         priceId,
         interval: input.interval,
         trialDays: plan.trialDays > 0 ? plan.trialDays : undefined,
+        discount,
         successUrl: absoluteUrl(req, '/app/billing'),
         cancelUrl: absoluteUrl(req, '/app/billing?checkout=cancelled'),
         idempotencyKey,
