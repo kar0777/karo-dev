@@ -5,6 +5,7 @@ import { Lock } from 'lucide-react';
 
 import { AuthHeading } from '@/components/auth/auth-heading';
 import { firstParam, safeNextPath } from '@/components/auth/next-path';
+import { configuredOAuthProviders } from '@/lib/auth/oauth';
 import { RegisterForm } from '@/components/auth/register-form';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -70,7 +71,7 @@ export default async function RegisterPage({
         description="Your personal workspace, a sandboxed machine for the agent, and metering from the first token."
       />
 
-      <RegisterForm next={next} />
+      <RegisterForm next={next} oauthProviders={configuredOAuthProviders()} />
     </div>
   );
 }

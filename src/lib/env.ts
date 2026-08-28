@@ -127,6 +127,20 @@ const serverSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
+  // ---- OAuth sign-in (both free tiers) ----------------------------------
+  /**
+   * GitHub: Settings → Developer settings → OAuth Apps. Google: Google Cloud
+   * Console → OAuth consent screen + OAuth client ID (Web application).
+   * Register the redirect `${APP_URL}/api/auth/oauth/<provider>/callback` in
+   * each. A provider with both halves set shows its button on the login and
+   * register screens; identities are matched by provider account id, then by
+   * verified email (linking onto an existing password account).
+   */
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+
   // ---- Email ------------------------------------------------------------
   /**
    * `console` writes verification links to the server log (dev default).

@@ -54,32 +54,55 @@ const PROVIDERS = [
   { key: 'google', label: 'Continue with Google', Mark: GoogleMark },
 ] as const;
 
-export function OAuthButtons({ className }: { className?: string }) {
+export function OAuthButtons({
+  className,
+  enabled = [],
+  next,
+}: {
+  className?: string;
+  /** Provider keys with credentials in this deployment's environment. */
+  enabled?: readonly string[];
+  /** Where a successful sign-in continues to. */
+  next?: string;
+}) {
   return (
     <div className={className}>
       <div className="grid gap-2 sm:grid-cols-2">
-        {PROVIDERS.map(({ key, label, Mark }) => (
-          <Tooltip key={key}>
-            {/* A disabled button receives no pointer events, so the trigger is the
-                wrapper around it. */}
-            <TooltipTrigger asChild>
-              <span className="inline-flex">
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  disabled
-                  className="w-full"
-                  iconLeft={<Mark className="size-4" />}
-                >
-                  {label}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{UNAVAILABLE}</TooltipContent>
-          </Tooltip>
-        ))}
+        {PROVIDERS.map(({ key, label, Mark }) => {
+          const on = enabled.includes(key);
+          const href = `/api/auth/oauth/${key}${next ? `?next=${encodeURIComponent(next)}` : ''}`;
+          return on ? (
+            <Button key={key} variant="secondary" size="lg" className="w-full" asChild>
+              <a href={href}>
+                <Mark className="size-4" />
+                {label}
+              </a>
+            </Button>
+          ) : (
+            <Tooltip key={key}>
+              {/* A disabled button receives no pointer events, so the trigger is the
+                  wrapper around it. */}
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    disabled
+                    className="w-full"
+                    iconLeft={<Mark className="size-4" />}
+                  >
+                    {label}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{UNAVAILABLE}</TooltipContent>
+            </Tooltip>
+          );
+        })}
       </div>
-      <p className="mt-2 text-center text-[11px] leading-relaxed text-subtle">{UNAVAILABLE}</p>
+      {enabled.length === 0 ? (
+        <p className="mt-2 text-center text-[11px] leading-relaxed text-subtle">{UNAVAILABLE}</p>
+      ) : null}
     </div>
   );
 }

@@ -413,6 +413,64 @@ export async function registerUser(input: RegisterInput): Promise<User> {
   return user;
 }
 
+/**
+ * Creates (or returns) the account behind an OAuth sign-in.
+ *
+ * OAuth providers have already verified the address, so the user lands
+ * email-verified and without a password — signing in with a password stays
+ * available later only through "forgot password", which sets one. Provisioning
+ * mirrors `registerUser` exactly: a user never exists without their personal
+ * team, membership, PAYG balance and entry subscription.
+ */
+export async function registerOAuthUser(input: {
+  email: string;
+  name?: string | null;
+  avatarUrl?: string | null;
+}): Promise<{ user: User; created: boolean }> {
+  const email = normaliseEmail(input.email);
+  if (!email || !email.includes('@')) {
+    throw new ValidationError('The identity provider did not return a usable email address.');
+  }
+
+  const existing = await findUserByEmail(email);
+  if (existing) return { user: existing, created: false };
+
+  const creditLimitMicroUsd = await getSetting(
+    SETTING_KEYS.billingPaygCreditLimitMicroUsd,
+    settingDefault(SETTING_KEYS.billingPaygCreditLimitMicroUsd),
+  );
+
+  const user = await db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(users)
+      .values({
+        id: newId(ID_PREFIX.user),
+        email,
+        name: displayNameFor(email, input.name),
+        avatarUrl: input.avatarUrl ?? null,
+        emailVerifiedAt: new Date(),
+        platformRole: 'user',
+      })
+      .returning();
+
+    const created = inserted[0];
+    if (!created) throw new Error('User insert returned no row');
+
+    const team = await provisionPersonalTeam(tx, created, { creditLimitMicroUsd });
+
+    const updated = await tx
+      .update(users)
+      .set({ defaultTeamId: team.id, updatedAt: new Date() })
+      .where(eq(users.id, created.id))
+      .returning();
+
+    return updated[0] ?? { ...created, defaultTeamId: team.id };
+  });
+
+  log.info('Registered a new account via OAuth', { userId: user.id });
+  return { user, created: true };
+}
+
 export type AuthenticateInput = {
   email: string;
   password: string;

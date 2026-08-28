@@ -35,6 +35,7 @@ import { apiFetch, ApiClientError } from '@/lib/client/api';
  */
 
 export type RegisterFormProps = {
+  oauthProviders: readonly string[];
   /**
    * Where to land once the account exists — `/app/onboarding` unless the person
    * arrived from a deep link. Already validated as a same-origin path.
@@ -42,7 +43,7 @@ export type RegisterFormProps = {
   next: string;
 };
 
-export function RegisterForm({ next }: RegisterFormProps) {
+export function RegisterForm({ next, oauthProviders }: RegisterFormProps) {
   const router = useRouter();
   const formId = useId();
 
@@ -257,7 +258,7 @@ export function RegisterForm({ next }: RegisterFormProps) {
         </p>
       </form>
 
-      <OAuthButtons />
+      <OAuthButtons enabled={oauthProviders} />
 
       <p className="text-center text-[13px] text-muted">
         Already have an account?{' '}

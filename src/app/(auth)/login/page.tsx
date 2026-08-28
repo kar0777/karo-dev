@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { CircleCheck, MailCheck, ShieldAlert } from 'lucide-react';
 
 import { AuthHeading } from '@/components/auth/auth-heading';
+import { configuredOAuthProviders } from '@/lib/auth/oauth';
 import { LoginForm } from '@/components/auth/login-form';
 import { firstParam, safeNextPath } from '@/components/auth/next-path';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -50,6 +51,30 @@ const NOTICES = {
     title: 'Signed out',
     body: 'This session was ended on this device. Everything you were working on is saved.',
   },
+  oauth_not_configured: {
+    variant: 'info' as const,
+    icon: ShieldAlert,
+    title: 'OAuth is not enabled here',
+    body: 'This deployment has no credentials for that sign-in provider. Use email and password, or ask the operator to configure it.',
+  },
+  oauth_denied: {
+    variant: 'danger' as const,
+    icon: ShieldAlert,
+    title: 'Sign-in was cancelled',
+    body: 'The sign-in was cancelled at the provider. Try again when ready.',
+  },
+  oauth_state: {
+    variant: 'danger' as const,
+    icon: ShieldAlert,
+    title: 'Sign-in flow expired',
+    body: 'The sign-in took too long or was started somewhere else. Start again — it only takes a moment.',
+  },
+  oauth_failed: {
+    variant: 'danger' as const,
+    icon: ShieldAlert,
+    title: 'Sign-in failed',
+    body: 'The provider did not complete the sign-in. Try again, or use email and password.',
+  },
 } as const;
 
 function resolveNotice(params: SearchParams): (typeof NOTICES)[keyof typeof NOTICES] | null {
@@ -57,6 +82,15 @@ function resolveNotice(params: SearchParams): (typeof NOTICES)[keyof typeof NOTI
   if (firstParam(params.reset) === '1') return NOTICES.reset;
   if (firstParam(params.verified) === '1') return NOTICES.verified;
   if (firstParam(params['signed-out']) === '1') return NOTICES.signed_out;
+  const oauthError = firstParam(params.error);
+  if (
+    oauthError === 'oauth_not_configured' ||
+    oauthError === 'oauth_denied' ||
+    oauthError === 'oauth_state' ||
+    oauthError === 'oauth_failed'
+  ) {
+    return NOTICES[oauthError];
+  }
   return null;
 }
 
@@ -110,6 +144,7 @@ export default async function LoginPage({
         demoEnabled={demoEnabled}
         autoFocusDemo={autoFocusDemo}
         signupEnabled={signupEnabled}
+        oauthProviders={configuredOAuthProviders()}
       />
     </div>
   );

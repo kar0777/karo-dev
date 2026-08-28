@@ -33,6 +33,8 @@ export type LoginFormProps = {
   /** Already validated as a same-origin path by the page. */
   next: string;
   demoEnabled: boolean;
+  oauthProviders: readonly string[];
+  oauthNext?: string;
   /** `?demo=1` — land the keyboard on the demo button. */
   autoFocusDemo: boolean;
   signupEnabled: boolean;
@@ -40,7 +42,13 @@ export type LoginFormProps = {
 
 type Busy = 'idle' | 'credentials' | 'demo';
 
-export function LoginForm({ next, demoEnabled, autoFocusDemo, signupEnabled }: LoginFormProps) {
+export function LoginForm({
+  next,
+  demoEnabled,
+  autoFocusDemo,
+  signupEnabled,
+  oauthProviders,
+}: LoginFormProps) {
   const router = useRouter();
   const formId = useId();
   const demoButtonRef = useRef<HTMLButtonElement>(null);
@@ -223,7 +231,7 @@ export function LoginForm({ next, demoEnabled, autoFocusDemo, signupEnabled }: L
         </div>
       ) : null}
 
-      <OAuthButtons />
+      <OAuthButtons enabled={oauthProviders} next={next} />
 
       <p className="text-center text-[13px] text-muted">
         {signupEnabled ? (
