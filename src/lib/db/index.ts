@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 import { env } from '@/lib/env';
+import { databaseSsl } from './ssl';
 import * as schema from './schema';
 
 /**
@@ -17,7 +18,7 @@ const globalForDb = globalThis as unknown as {
 function createClient() {
   return postgres(env.DATABASE_URL, {
     max: env.DATABASE_MAX_CONNECTIONS,
-    ssl: env.DATABASE_SSL ? 'require' : undefined,
+    ssl: env.DATABASE_SSL ? 'require' : databaseSsl(env.DATABASE_URL),
     idle_timeout: 20,
     max_lifetime: 60 * 30,
     connect_timeout: 15,
