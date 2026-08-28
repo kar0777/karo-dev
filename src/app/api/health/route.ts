@@ -28,6 +28,30 @@ const log = createLogger('api:health');
 
 const APP_VERSION = process.env.npm_package_version ?? '1.0.0';
 
+/**
+ * Classifies a failed ping into a reason safe for an unauthenticated body.
+ * The raw error message names hosts, users and ports; the class names only
+ * the problem, which is what a dashboard or an operator on the far side of a
+ * status page needs to route the incident.
+ */
+function dbFailureReason(message: string): string {
+  const m = message.toLowerCase();
+  if (/enotfound|eai_again|getaddrinfo/.test(m)) return 'dns';
+  if (/etimedout|timeout|timed out/.test(m)) return 'timeout';
+  if (/econnrefused/.test(m)) {
+    return /127\.0\.0\.1|localhost|\[::1\]/.test(m)
+      ? 'econnrefused-localhost'
+      : 'econnrefused-remote';
+  }
+  if (/28p01|password authentication|authentication failed|role .* does not exist/.test(m)) {
+    return 'auth';
+  }
+  if (/ssl|tls|certificate/.test(m)) return 'tls';
+  if (/3d000|database .* does not exist/.test(m)) return 'database-missing';
+  if (/53300|too many connections/.test(m)) return 'connection-limit';
+  return 'unknown';
+}
+
 export const GET = defineHandler({ auth: 'none', csrf: false, rateLimit: false }, async () => {
   const database = await pingDatabase();
 
@@ -59,6 +83,7 @@ export const GET = defineHandler({ auth: 'none', csrf: false, rateLimit: false }
       db: {
         ok: database.ok,
         latencyMs: database.latencyMs,
+        ...(database.ok ? {} : { reason: dbFailureReason(database.error ?? '') }),
       },
       redis: {
         // `memory` is a valid, supported configuration — not a failure.
