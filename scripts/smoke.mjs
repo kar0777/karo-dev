@@ -10,7 +10,9 @@
  *
  * What it proves, in order: the platform is up, the marketing site renders,
  * the SEO routes serve, and (with --demo) a visitor can sign in and reach the
- * product shell. Exits non-zero on the first failure and prints what failed.
+ * product shell. Every failing check is reported; the exit code is non-zero
+ * when anything failed. Failures are counted rather than exiting mid-run —
+ * `process.exit` with open sockets trips a libuv assertion on Windows.
  */
 
 const BASE_URL = (process.env.BASE_URL ?? process.argv[2] ?? '').replace(/\/+$/, '');
@@ -22,6 +24,7 @@ if (!BASE_URL) {
 }
 
 let passed = 0;
+let failed = 0;
 
 function ok(label) {
   passed += 1;
@@ -29,9 +32,9 @@ function ok(label) {
 }
 
 function fail(label, detail) {
+  failed += 1;
   console.error(`  ✖ ${label}`);
   if (detail !== undefined) console.error(`    ${detail}`);
-  process.exit(1);
 }
 
 async function check(label, run) {
@@ -94,4 +97,9 @@ if (WITH_DEMO) {
   });
 }
 
-console.log(`✔ Smoke passed — ${passed} check${passed === 1 ? '' : 's'} green`);
+if (failed > 0) {
+  console.error(`✖ Smoke failed — ${failed} check${failed === 1 ? '' : 's'} red`);
+  process.exitCode = 1;
+} else {
+  console.log(`✔ Smoke passed — ${passed} check${passed === 1 ? '' : 's'} green`);
+}
