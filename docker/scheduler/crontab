@@ -1,0 +1,28 @@
+# ------------------------------------------------------------------ #
+#  Karo maintenance schedule
+#
+#  Each cadence is the one the route's own docblock documents — they are
+#  not arbitrary, so change them there and here together.
+#
+#  Installed at /etc/crontabs/root — busybox crond derives the account a
+#  job runs under from the crontab's filename.
+#
+#  Job output is redirected at PID 1's stdout/stderr because busybox
+#  crond otherwise tries to *mail* what a job prints, and with no local
+#  sendmail that means the output is discarded. Sending it to the
+#  container's own streams is what makes `docker compose logs scheduler`
+#  show anything at all.
+# ------------------------------------------------------------------ #
+
+# Sleep idle sandboxes and destroy ones past their retention window.
+# Every five minutes: the shortest idle timeout a plan can set is measured
+# in minutes, so a coarser sweep would bill through it.
+*/5 * * * * /usr/local/bin/karo-job sandbox-sweep /api/admin/sandboxes/sweep >>/proc/1/fd/1 2>>/proc/1/fd/2
+
+# Refill balances for teams that asked for automatic top-up.
+*/10 * * * * /usr/local/bin/karo-job billing-auto-topup /api/cron/billing/auto-topup >>/proc/1/fd/1 2>>/proc/1/fd/2
+
+# Apply plan changes parked until the end of a billing period. Hourly, at
+# an offset rather than on the hour, so it does not pile onto whatever
+# else a host runs at :00.
+17 * * * * /usr/local/bin/karo-job billing-apply-pending /api/cron/billing/apply-pending >>/proc/1/fd/1 2>>/proc/1/fd/2

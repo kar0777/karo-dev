@@ -1,0 +1,157 @@
+# ==================================================================== #
+#  Karo — local development stack
+#
+#  This file starts the *backing services only*. The Next.js app is NOT
+#  run here: during development you run it on the host with
+#
+#      npm run dev
+#
+#  because Next 16's dev server, HMR and the TypeScript watcher are all
+#  dramatically faster on a native filesystem than through a bind mount,
+#  and because the sandbox providers need to talk to the host Docker
+#  daemon anyway. A commented-out `app` service is provided at the bottom
+#  for the rare case where you want the whole thing containerised; the
+#  production shape lives in docker-compose.prod.yml.
+#
+#  Usage
+#  -----
+#      docker compose up -d          # start postgres + redis
+#      npm run db:push               # create the schema
+#      npm run db:seed               # load the demo dataset
+#      npm run dev                   # http://localhost:3000
+#      docker compose down           # stop (volumes survive)
+#      docker compose down -v        # stop and wipe the data
+# ==================================================================== #
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: karo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: karo
+      POSTGRES_PASSWORD: karo
+      POSTGRES_DB: karo
+      # Deterministic collation so `lower()` unique indexes behave the
+      # same on every developer machine regardless of host locale.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      # Published on localhost only — `npm run dev` runs on the host and
+      # connects over this port. Never bind 0.0.0.0 for a dev database.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - karo-postgres-data:/var/lib/postgresql/data
+      # Runs once, on an empty data directory, before Postgres accepts
+      # connections. Installs the extensions the schema depends on.
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/10-karo-extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U karo -d karo"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - karo
+
+  redis:
+    image: redis:7-alpine
+    container_name: karo-redis
+    restart: unless-stopped
+    # appendonly  → rate-limit counters and session cache survive a restart
+    # maxmemory   → a runaway cache key can never eat the dev machine
+    # allkeys-lru → Karo treats Redis as a cache; evicting is always safe
+    command: >-
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - karo-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - karo
+
+  # ------------------------------------------------------------------ #
+  #  Optional: run the Next.js app in a container too.
+  #
+  #  Uncomment ONLY if you cannot run Node on the host. Expect slower
+  #  HMR, and note that the sandbox providers will need DOCKER_SOCKET
+  #  mounted, which is a privilege you should not hand to a dev app
+  #  container casually — prefer SANDBOX_PROVIDER=mock here.
+  # ------------------------------------------------------------------ #
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #     target: builder          # dev needs devDependencies present
+  #   container_name: karo-app
+  #   command: npm run dev -- --hostname 0.0.0.0
+  #   environment:
+  #     NODE_ENV: development
+  #     APP_URL: http://localhost:3000
+  #     DATABASE_URL: postgresql://karo:karo@postgres:5432/karo
+  #     REDIS_URL: redis://redis:6379
+  #     SANDBOX_PROVIDER: mock
+  #   ports:
+  #     - '127.0.0.1:3000:3000'
+  #   volumes:
+  #     - .:/app
+  #     - /app/node_modules      # keep the image's installed modules
+  #     - /app/.next             # never share the build cache with the host
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - karo
+
+volumes:
+  karo-postgres-data:
+    name: karo-postgres-data
+  karo-redis-data:
+    name: karo-redis-data
+
+networks:
+  # Control-plane network: Postgres, Redis and (in prod) the app.
+  karo:
+    name: karo
+    driver: bridge
+
+  # ------------------------------------------------------------------ #
+  #  Sandbox network — the isolated network agent containers attach to.
+  #
+  #  `internal: true` is the whole security control here. Docker creates
+  #  the bridge WITHOUT a default gateway and installs no MASQUERADE
+  #  rule for it, so a container on this network:
+  #
+  #    · cannot reach the public internet (no egress at all);
+  #    · cannot reach the cloud metadata endpoint 169.254.169.254, which
+  #      is the classic path from "agent runs `curl`" to "agent holds
+  #      your instance's IAM credentials";
+  #    · cannot reach the host's other Docker networks or the control
+  #      plane's Postgres/Redis.
+  #
+  #  Sandbox containers get network access only when a provider
+  #  deliberately attaches an additional, egress-filtered network — never
+  #  by default. `SANDBOX_NETWORK` in .env must match `name:` below, and
+  #  the network is declared here (rather than created ad hoc) so that
+  #  `docker compose up` guarantees it exists before any sandbox starts.
+  #
+  #  No compose service joins it: sandboxes are created at runtime by the
+  #  local-docker provider, not by compose. If you ever need it without
+  #  compose, the equivalent is:
+  #
+  #      docker network create --driver bridge --internal karo-sandbox
+  # ------------------------------------------------------------------ #
+  karo-sandbox:
+    name: karo-sandbox
+    driver: bridge
+    internal: true

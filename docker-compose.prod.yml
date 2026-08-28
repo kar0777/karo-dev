@@ -1,0 +1,289 @@
+# ==================================================================== #
+#  Karo — production overlay
+#
+#  This file is an OVERLAY. It is always applied on top of the base file:
+#
+#      docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#      docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+#      docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f app
+#
+#  It adds the Next.js control plane and hardens the backing services.
+#  Configuration comes from a real `.env` next to this file (copy
+#  `.env.example` and fill it in) — nothing secret is written here.
+#
+#  ------------------------------------------------------------------
+#  DEPLOYMENT SHAPE (Hetzner Cloud)
+#  ------------------------------------------------------------------
+#  Karo is deliberately split across two classes of node, because the
+#  thing that runs untrusted agent code must never be the thing that
+#  holds the database credentials.
+#
+#      ┌──────────────────────── public internet ────────────────────┐
+#      │                                                             │
+#      │   HTTPS :443                                                │
+#      ▼                                                             │
+#  ┌──────────────────────────────┐                                  │
+#  │  CONTROL PLANE  (1 node)     │   e.g. Hetzner CPX31, Nuremberg  │
+#  │  ─────────────────────────   │                                  │
+#  │  · Caddy/Traefik → :3000     │   only node with a public IP     │
+#  │  · this compose file:        │   and an open firewall port      │
+#  │      app + postgres + redis  │                                  │
+#  │  · holds every secret        │                                  │
+#  └──────────────┬───────────────┘                                  │
+#                 │  Hetzner private network 10.0.0.0/16             │
+#                 │  (vSwitch; no route to the internet)             │
+#      ┌──────────┴───────────┬──────────────────────┐               │
+#      ▼                      ▼                      ▼               │
+#  ┌────────────┐      ┌────────────┐         ┌────────────┐          │
+#  │ WORKER 1   │      │ WORKER 2   │   ...   │ WORKER N   │          │
+#  │ CCX/CPX    │      │            │         │            │          │
+#  │ sandbox    │      │ sandbox    │         │ sandbox    │          │
+#  │ containers │      │ containers │         │ containers │          │
+#  └────────────┘      └────────────┘         └────────────┘          │
+#      · NO public ingress: Hetzner Cloud Firewall drops everything
+#        inbound except the control plane's private IP on the Docker
+#        TLS port; the workers are not reachable from the internet.
+#      · Each worker runs `dockerd` with TLS client-cert auth. The app
+#        talks to it via DOCKER_HOST=tcp://10.0.0.N:2376. The Docker
+#        socket is NEVER bind-mounted into any container.
+#      · Sandbox containers are attached to the `karo-sandbox` internal
+#        network (see docker-compose.yml) so agent code has no egress
+#        and cannot reach 169.254.169.254 for cloud credentials.
+#      · Workers are cattle: they hold no state worth backing up. The
+#        only stateful node is the control plane (Postgres volume +
+#        nightly `pg_dump` to Hetzner Storage Box).
+#      · Scaling out = provision another worker, register it, done. The
+#        control plane never needs to grow with sandbox load.
+#
+#  Bring-Your-Own-Server workers invert the direction: they sit on the
+#  customer's hardware and dial *out* to the control plane, so they need
+#  no inbound port at all. Same isolation rules apply on their side.
+# ==================================================================== #
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    image: karo/app:1
+    container_name: karo-app
+    restart: unless-stopped
+
+    # Everything the app reads is documented in .env.example.
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      # Service names resolve on the `karo` network; these override any
+      # localhost values left over from a developer's .env.
+      DATABASE_URL: postgresql://karo:karo@postgres:5432/karo
+      REDIS_URL: redis://redis:6379
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Schema first. The app would otherwise come up against whatever
+      # shape the database happens to be in and fail per-request instead
+      # of once, loudly, at deploy time.
+      migrate:
+        condition: service_completed_successfully
+
+    ports:
+      # Bound to loopback: a TLS-terminating reverse proxy on the host
+      # (Caddy or Traefik) is what faces the internet. The app container
+      # never speaks TLS itself.
+      - "127.0.0.1:3000:3000"
+
+    # ---- Hardening ------------------------------------------------ #
+    # The image contains no writable state; every path the runtime needs
+    # to write is an explicit tmpfs below.
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m,noexec,nosuid,nodev
+      # Next.js writes its ISR / image-optimiser cache here.
+      - /app/.next/cache:mode=0700,uid=1000,gid=1000,size=256m,noexec,nosuid,nodev
+    security_opt:
+      # Blocks setuid escalation for the whole process tree, including
+      # anything a dependency might try to exec.
+      - no-new-privileges:true
+    cap_drop:
+      # The app binds :3000 as an unprivileged port and needs nothing else.
+      - ALL
+
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 16384
+    pids_limit: 512
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+    healthcheck:
+      test:
+        ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - karo
+
+  # ---- Migrations: one-shot, before the app ----------------------- #
+  #
+  # Built from the `builder` stage on purpose. The `runner` image is a
+  # standalone bundle — no sources, no `drizzle/` folder, no `tsx` — so
+  # `npm run db:migrate` cannot run inside it. The builder stage still has
+  # all three, and reusing it means no second image to maintain and no
+  # second place for the migration list to drift.
+  #
+  # `service_completed_successfully` above makes this a real gate: a
+  # failed migration stops the deploy instead of letting the app serve
+  # requests against a half-migrated schema.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: karo/migrate:1
+    container_name: karo-migrate
+    # One-shot. Compose must not treat exit 0 as a crash to recover from.
+    restart: "no"
+
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://karo:karo@postgres:5432/karo
+
+    command: ["npm", "run", "db:migrate"]
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    networks:
+      - karo
+
+  # ---- Scheduler: the timer behind three paid behaviours ---------- #
+  #
+  # Without this service the idle-sandbox sweep, auto top-up and deferred
+  # plan changes never run — all three are entitlements the pricing page
+  # sells, and all three are triggered only by an HTTP call. See
+  # docker/scheduler/crontab for the cadences and why they are what they
+  # are.
+  #
+  # Requires CRON_SECRET in .env; the container refuses to start without
+  # it rather than logging 401s forever.
+  scheduler:
+    build:
+      context: docker/scheduler
+    image: karo/scheduler:1
+    container_name: karo-scheduler
+    restart: unless-stopped
+
+    # Reads CRON_SECRET from the same file the app does — they have to be
+    # the same value, and keeping them in one place is how that stays true.
+    env_file:
+      - .env
+    environment:
+      # Private compose network, so plain HTTP and no trip through the
+      # reverse proxy. Never the public APP_URL: that would route
+      # maintenance traffic over the internet and through TLS for nothing.
+      KARO_INTERNAL_URL: http://app:3000
+      TZ: UTC
+
+    depends_on:
+      app:
+        condition: service_healthy
+
+    # ---- Hardening ------------------------------------------------ #
+    #
+    # This container runs busybox crond as root — see the Dockerfile for
+    # why that is not optional — so the isolation is bought here instead.
+    # No capabilities, nothing writable but a small tmpfs, no published
+    # port, and the only reachable host is `app` on the compose network.
+    read_only: true
+    tmpfs:
+      # Holds the 0600 env file the jobs read, plus curl's scratch files.
+      # Nothing is ever executed from here, so noexec costs nothing.
+      - /tmp:mode=0700,size=16m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    pids_limit: 64
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    networks:
+      - karo
+
+  # ---- Backing services: production overrides --------------------- #
+  postgres:
+    restart: always
+    # The database is reachable only over the compose network. Publishing
+    # 5432 at all in production is a mistake; the base file's loopback
+    # binding is removed here rather than narrowed.
+    ports: !override []
+    security_opt:
+      - no-new-privileges:true
+    shm_size: 256mb
+    command:
+      - postgres
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "work_mem=8MB"
+      # Slow-query visibility without shipping a full APM.
+      - "-c"
+      - "log_min_duration_statement=500"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  redis:
+    restart: always
+    ports: !override []
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command: >-
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

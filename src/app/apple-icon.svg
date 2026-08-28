@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180" fill="none" role="img" aria-label="Karo">
+  <title>Karo</title>
+  <rect width="180" height="180" rx="40" ry="40" fill="#1b1916"/>
+  <rect x="0.75" y="0.75" width="178.5" height="178.5" rx="39.25" ry="39.25" fill="none" stroke="#2a2825" stroke-width="1.5"/>
+  <path d="M106.92 50.52 90 33.6 33.6 90 90 146.4 146.4 90 119.34 62.94" fill="none" stroke="#f1f0ee" stroke-width="9.6" stroke-linecap="round" stroke-linejoin="miter" stroke-miterlimit="4"/>
+  <path d="M87 65.4 114.6 93 87 120.6 59.4 93Z" fill="#54d2a8"/>
+</svg>

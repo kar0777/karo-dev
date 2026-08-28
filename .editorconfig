@@ -1,0 +1,44 @@
+# ------------------------------------------------------------------ #
+#  Karo — editor defaults
+#  https://editorconfig.org
+#
+#  The repo is developed on Windows but every artefact it produces runs
+#  on Linux, so line endings are LF everywhere without exception.
+# ------------------------------------------------------------------ #
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+max_line_length = 96
+
+[*.{md,mdx}]
+# Two trailing spaces are a hard line break in Markdown.
+trim_trailing_whitespace = false
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.sql]
+indent_size = 2
+
+[{Dockerfile,Dockerfile.*,*.dockerfile}]
+indent_size = 4
+
+[*.sh]
+indent_size = 2
+# Shell scripts are executed by the sandbox entrypoint — CRLF would break the shebang.
+end_of_line = lf
+
+[Makefile]
+indent_style = tab
+
+[*.{json,jsonc}]
+indent_size = 2
+
+[package.json]
+indent_size = 2

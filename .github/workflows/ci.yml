@@ -1,0 +1,294 @@
+# ==================================================================== #
+#  Karo — CI
+#
+#  `npm run verify` is the single command a developer runs before pushing:
+#  format, types, lint, tests, build, in that order, stopping at the first
+#  failure. That is the right shape locally and the wrong shape here — a
+#  lint error would hide a broken build for another ten minutes, and the
+#  stages that need no database would wait behind the one that does.
+#
+#  So CI runs the same work as independent jobs. Everything below is
+#  reachable locally through `npm run verify` plus `npm run test:e2e`;
+#  nothing here is a check that only exists on CI.
+# ==================================================================== #
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only by default. No job here publishes anything.
+permissions:
+  contents: read
+
+env:
+  # Matches the Dockerfile's NODE_VERSION and package.json engines.
+  NODE_VERSION: '24'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # ---------------------------------------------------------------- #
+  #  Formatting, types, lint — no services, fastest signal
+  # ---------------------------------------------------------------- #
+  static:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # Each step runs even if an earlier one failed, so one push surfaces
+      # every class of problem instead of one per round trip.
+      - name: Formatting
+        if: '!cancelled()'
+        run: npm run format:check
+
+      - name: Types
+        if: '!cancelled()'
+        run: npm run typecheck
+
+      - name: Lint
+        if: '!cancelled()'
+        run: npm run lint
+
+  # ---------------------------------------------------------------- #
+  #  Unit + integration
+  #
+  #  `npm test` covers both suites. The integration half talks to a real
+  #  Postgres — see tests/setup.ts — so the schema has to exist first.
+  # ---------------------------------------------------------------- #
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # Same major as docker-compose.yml. A test suite passing on a
+        # different major than production runs is not evidence.
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: karo
+          POSTGRES_PASSWORD: karo
+          # tests/setup.ts defaults to a `karo_test` database precisely so a
+          # suite that truncates tables can never point at a development
+          # one. Creating it under that name here keeps the default honest.
+          POSTGRES_DB: karo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U karo -d karo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://karo:karo@localhost:5432/karo_test
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # `loadScriptEnv` keeps a shell-provided DATABASE_URL ahead of any
+      # dotenv file, so this reaches the service container above.
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      - name: Unit and integration tests
+        run: npm test
+
+  # ---------------------------------------------------------------- #
+  #  Production build
+  #
+  #  Must succeed with no secrets present: env.ts resolves an empty
+  #  environment to demo mode on purpose, and anything that genuinely
+  #  needs a credential reads it at request time. A build that starts
+  #  failing here without one is a regression in that contract.
+  # ---------------------------------------------------------------- #
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      # The Dockerfile's runner stage copies these two paths. If either
+      # stops being produced the image build breaks, and it breaks at
+      # deploy time rather than here unless something checks.
+      - name: Assert the standalone bundle is complete
+        run: |
+          test -f .next/standalone/server.js \
+            || { echo "::error::.next/standalone/server.js missing — is output:'standalone' still set in next.config.ts?"; exit 1; }
+          test -d .next/static \
+            || { echo "::error::.next/static missing"; exit 1; }
+          test -f .next/standalone/worker/karo-worker.mjs \
+            || { echo "::error::worker agent not traced into the bundle — /api/worker/install would 500 in production"; exit 1; }
+          echo "standalone bundle looks complete"
+
+  # ---------------------------------------------------------------- #
+  #  End to end
+  #
+  #  Runs against demo mode, so no model key, Docker daemon or Stripe
+  #  account is involved. Playwright boots `npm run dev` itself (see
+  #  playwright.config.ts) but the database has to be seeded first — the
+  #  suite signs in as the seeded demo account.
+  # ---------------------------------------------------------------- #
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: karo
+          POSTGRES_PASSWORD: karo
+          POSTGRES_DB: karo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U karo -d karo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://karo:karo@localhost:5432/karo
+      # Explicit rather than inherited: the suite must never reach a real
+      # model, sandbox or payment API even if a key leaks into the runner.
+      KARO_DEMO_MODE: 'true'
+      SANDBOX_PROVIDER: mock
+      EMAIL_TRANSPORT: console
+      APP_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chromium
+        run: npm run test:e2e:install
+
+      - name: Prepare the database
+        run: |
+          npm run db:migrate
+          npm run db:seed
+
+      - name: Playwright
+        run: npm run test:e2e
+
+      # Kept on failure only. A green run's report is noise; a red one is
+      # the difference between fixing a CI-only failure and guessing at it.
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # ---------------------------------------------------------------- #
+  #  Container images
+  #
+  #  The images are how Karo is actually deployed, and they break in ways
+  #  `npm run build` cannot see: a COPY whose source moved, a stage that
+  #  drops a file the runtime reads, a CRLF shebang from a Windows commit.
+  #  Built and thrown away — publishing is a release concern, not a CI one.
+  # ---------------------------------------------------------------- #
+  images:
+    name: Container images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the control plane image
+        run: docker build --tag karo/app:ci .
+
+      - name: Build the scheduler image
+        run: docker build --tag karo/scheduler:ci docker/scheduler
+
+      # Catches the failure mode this repo is most exposed to: it is
+      # developed on Windows, and a CRLF shebang makes the kernel look for
+      # an interpreter called `/bin/sh\r` — then reports "not found" about
+      # a file that is plainly there. .gitattributes is supposed to prevent
+      # it; this proves it did, inside the built image.
+      #
+      # Fed on stdin with a quoted heredoc so the check script is read
+      # literally, with no second layer of shell quoting to get wrong.
+      - name: Assert the scheduler image is sane
+        run: |
+          docker run --rm --interactive --entrypoint sh karo/scheduler:ci <<'CHECK'
+          set -eu
+          for f in /usr/local/bin/entrypoint /usr/local/bin/karo-job; do
+            [ -x "$f" ] || { echo "not executable: $f"; exit 1; }
+            case $(head -c 2 "$f") in
+              '#!') ;;
+              *) echo "no shebang: $f"; exit 1 ;;
+            esac
+            if grep -q "$(printf '\r')" "$f"; then
+              echo "CRLF line endings in $f — the shebang will not resolve"
+              exit 1
+            fi
+          done
+          [ -f /etc/crontabs/root ] || { echo "crontab not installed"; exit 1; }
+          command -v crond >/dev/null || { echo "crond missing"; exit 1; }
+          command -v curl >/dev/null || { echo "curl missing"; exit 1; }
+          echo "scheduler image looks sane"
+          CHECK
+
+      # The entrypoint must refuse to start without CRON_SECRET rather than
+      # sit there logging 401s while looking healthy.
+      - name: Assert the scheduler refuses to run unconfigured
+        run: |
+          if docker run --rm karo/scheduler:ci; then
+            echo "::error::the scheduler started without CRON_SECRET"
+            exit 1
+          fi
+          echo "scheduler correctly refused to start"

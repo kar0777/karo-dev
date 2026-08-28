@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none" role="img" aria-label="Karo">
+  <title>Karo</title>
+  <style>
+    .karo-boundary { stroke: #211d19; }
+    .karo-core { fill: #211d19; }
+    @media (prefers-color-scheme: dark) {
+      .karo-boundary { stroke: #f1f0ee; }
+      .karo-core { fill: #f1f0ee; }
+    }
+  </style>
+  <path class="karo-boundary" d="M19.76 7.23 16 3.47 3.47 16 16 28.53 28.53 16 22.52 9.99" fill="none" stroke="#211d19" stroke-width="2.13" stroke-linecap="round" stroke-linejoin="miter" stroke-miterlimit="4"/>
+  <path class="karo-core" d="M15.33 10.53 21.47 16.67 15.33 22.8 9.2 16.67Z" fill="#211d19"/>
+</svg>

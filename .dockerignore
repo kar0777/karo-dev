@@ -1,0 +1,71 @@
+# ------------------------------------------------------------------ #
+#  Karo — build context exclusions
+#
+#  Keeping the context small is not cosmetic: `COPY . .` in the builder
+#  stage would otherwise ship .env files and the local .next cache into
+#  an image layer, where they are trivially recoverable.
+# ------------------------------------------------------------------ #
+
+# Dependencies are reinstalled from the lockfile inside the image.
+node_modules
+.pnp
+.pnp.js
+.yarn
+
+# Build output — always rebuilt in the builder stage.
+.next
+out
+build
+dist
+*.tsbuildinfo
+.turbo
+.swc
+
+# Secrets. `.env.example` is allowed back in only because it is a template.
+.env
+.env.*
+!.env.example
+
+# Tests and reports are not part of the runtime image.
+coverage
+playwright-report
+playwright/.cache
+test-results
+blob-report
+tests
+
+# VCS and CI metadata.
+.git
+.gitignore
+.gitattributes
+.github
+.husky
+
+# Editors / OS noise.
+.idea
+.vscode
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker's own files — copying them in would invalidate layers for no gain.
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.prod.yml
+docker
+
+# Logs and local scratch.
+*.log
+logs
+tmp
+.cache
+.local
+
+# Docs that do not affect the build.
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+docs

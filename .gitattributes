@@ -1,0 +1,53 @@
+# ------------------------------------------------------------------ #
+#  Karo — line endings and diff behaviour
+#
+#  The repo is developed on Windows but every artefact it produces runs
+#  on Linux. Git's `core.autocrlf=true` — the default from the Git for
+#  Windows installer — rewrites LF to CRLF on checkout, and a CRLF
+#  shebang makes the kernel look for an interpreter called `/bin/sh\r`.
+#  The container then dies with "no such file or directory" naming a file
+#  that plainly exists, which is among the least obvious failures in
+#  this whole stack.
+#
+#  .editorconfig already asks editors for LF. That covers files a human
+#  types; this covers files Git hands out, which is the case that
+#  actually breaks a fresh clone on a new machine.
+# ------------------------------------------------------------------ #
+
+# Let Git decide what is text, but normalise everything it does.
+* text=auto eol=lf
+
+# ---- Executed inside containers: LF is not negotiable ----
+*.sh              text eol=lf
+Dockerfile        text eol=lf
+Dockerfile.*      text eol=lf
+*.dockerfile      text eol=lf
+docker/**/crontab text eol=lf
+entrypoint.sh     text eol=lf
+
+# ---- Read by Linux tooling ----
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.sql  text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+.env.* text eol=lf
+
+# ---- Binary: never touch, never diff ----
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.pdf  binary
+
+# ---- Generated or vendored: keep out of review noise ----
+package-lock.json  -diff linguist-generated
+drizzle/meta/**    -diff linguist-generated

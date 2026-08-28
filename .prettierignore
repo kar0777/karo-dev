@@ -1,0 +1,42 @@
+# ------------------------------------------------------------------ #
+#  Karo — files Prettier must not touch
+# ------------------------------------------------------------------ #
+
+# Generated / vendored
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.turbo/
+*.tsbuildinfo
+
+# Drizzle output: the SQL and the journal are generated artefacts and
+# must stay byte-identical to what drizzle-kit emitted, otherwise the
+# migration hashes in drizzle/meta/_journal.json stop matching.
+drizzle/
+
+# Lockfiles are tool-owned.
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Env templates: alignment of the comment blocks is hand-tuned.
+.env.example
+
+# Binary-ish and non-formattable assets
+public/
+*.svg
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.ico
+*.woff
+*.woff2
+*.min.js
+*.min.css
