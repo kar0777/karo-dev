@@ -10,7 +10,6 @@ import { sha256 } from '@/lib/crypto/secrets';
 import { db } from '@/lib/db';
 import { byosWorkers } from '@/lib/db/schema';
 import { newToken } from '@/lib/ids';
-import { markSeen } from '@/lib/sandbox/worker-bus';
 import { WORKER_POLL_HOLD_MS } from '@/lib/sandbox/worker-bus';
 
 /**
@@ -87,7 +86,6 @@ export const POST = defineHandler(
       );
     }
 
-    markSeen(worker.id);
 
     await recordAudit({
       action: AUDIT_ACTIONS.workerRegister,

@@ -7,7 +7,6 @@ import { UnauthorizedError } from '@/lib/api/errors';
 import { sha256 } from '@/lib/crypto/secrets';
 import { db } from '@/lib/db';
 import { byosWorkers, type ByosWorker } from '@/lib/db/schema';
-import { markSeen } from '@/lib/sandbox/worker-bus';
 
 /**
  * Karo Worker Protocol v1 — authentication.
@@ -60,7 +59,6 @@ export async function markWorkerSeen(
   patch: Partial<typeof byosWorkers.$inferInsert> = {},
 ): Promise<void> {
   const now = new Date();
-  markSeen(worker.id);
 
   await db
     .update(byosWorkers)

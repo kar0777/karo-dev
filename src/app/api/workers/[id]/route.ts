@@ -61,7 +61,7 @@ export const DELETE = defineHandler(
       .where(eq(byosWorkers.id, id))
       .returning();
 
-    drainWorker(
+    await drainWorker(
       id,
       'This server was revoked in Karo. Run the install command again with a fresh token to reconnect it.',
     );

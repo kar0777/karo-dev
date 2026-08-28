@@ -34,7 +34,7 @@ export const POST = defineHandler(
     const worker = await authenticateWorker(req);
     await markWorkerSeen(worker);
 
-    const accepted = complete(worker.id, {
+    const accepted = await complete(worker.id, {
       commandId: input.commandId,
       ok: input.ok,
       data: input.data,

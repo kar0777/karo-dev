@@ -99,7 +99,7 @@ export const POST = defineHandler(
       ...(reported.capabilities || input.metrics ? { capabilities: merged } : {}),
     });
 
-    const stats = workerStats(worker.id);
+    const stats = await workerStats(worker.id);
 
     return json({
       ok: true,

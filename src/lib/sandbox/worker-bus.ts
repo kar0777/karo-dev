@@ -1,5 +1,9 @@
 import 'server-only';
 
+import { and, eq, inArray, sql } from 'drizzle-orm';
+
+import { db } from '@/lib/db';
+import { byosCommands, byosWorkers } from '@/lib/db/schema';
 import { ID_PREFIX, newId } from '@/lib/ids';
 import { createLogger } from '@/lib/logger';
 
@@ -26,12 +30,28 @@ const log = createLogger('sandbox:worker-bus');
  * At no point does Karo hold credentials for the user's machine, and at no
  * point does the browser see anything but a status badge.
  *
- * This bus is the server-side half: it parks pending commands, hands them to a
- * polling worker, and resolves the promise the sandbox provider is awaiting.
+ * ## Why the queue is the database and not process memory
  *
- * Single-node by design. A multi-node control plane routes a worker's poll to
- * the node holding its pending work via a sticky hash on `workerId`; that
- * routing lives in the ingress layer, not here.
+ * This used to be an in-memory map, and the comment here said "single-node by
+ * design". That assumption is false on the hosting this platform actually ships
+ * on: on serverless, the instance that dispatches a `create` command is almost
+ * never the instance holding the worker's parked long-poll, so the command sat
+ * in the wrong process's memory until its timeout, and `workerIsConnected` —
+ * also per-process — reported every worker offline in any fresh instance. The
+ * queue therefore lives in `byos_commands`: dispatch inserts a row, the
+ * long-poll claims rows with `FOR UPDATE SKIP LOCKED` (any instance can serve
+ * any worker, two workers of the same team can never steal each other's
+ * command), and `result` completes the row that `dispatch` is polling.
+ *
+ * Liveness is likewise read from `byos_workers.last_heartbeat_at` rather than
+ * from process-local bookkeeping.
+ *
+ * The one thing that stays in-process is the **terminal event** stream
+ * (`emitEvent`/`subscribe`): keystroke latency cannot afford a database round
+ * trip, and a terminal session's open/input/output all tend to land on the
+ * instance serving the WebSocket-ish stream anyway. On serverless a terminal is
+ * therefore best-effort; command execution — the path that creates sandboxes
+ * and runs builds — is fully durable.
  */
 
 export type WorkerCommand =
@@ -107,21 +127,158 @@ export type WorkerEvent =
   | { type: 'terminal_exit'; sessionId: string; exitCode: number }
   | { type: 'sandbox_status'; sandboxExternalId: string; status: string };
 
-type PendingCommand = {
-  command: WorkerCommand;
-  resolve: (result: WorkerResult) => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
-  queuedAt: number;
-};
+export const WORKER_POLL_HOLD_MS = 25_000;
+const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
+/** How often `dispatch` checks for its result and the long-poll re-claims. */
+const QUEUE_CHECK_INTERVAL_MS = 1_000;
+
+/**
+ * Queues a command for a worker and waits for its result.
+ *
+ * The insert is the whole hand-off: whichever instance ends up serving the
+ * worker's next long-poll claims the row from the database. This function then
+ * polls the same row until the worker's result lands, so it does not matter
+ * which process runs which half.
+ */
+export async function dispatch(
+  workerId: string,
+  command: WorkerCommandInput,
+  timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
+): Promise<WorkerResult> {
+  const id = command.id ?? newId(ID_PREFIX.task);
+  const full = { ...command, id } as WorkerCommand;
+  const deadline = Date.now() + timeoutMs;
+
+  await db.insert(byosCommands).values({
+    id,
+    workerId,
+    kind: full.kind,
+    payload: full as unknown as Record<string, unknown>,
+    timeoutAt: new Date(deadline),
+  });
+
+  while (Date.now() < deadline) {
+    await sleep(Math.min(QUEUE_CHECK_INTERVAL_MS, Math.max(deadline - Date.now(), 0)));
+
+    const rows = await db
+      .select({ status: byosCommands.status, result: byosCommands.result, error: byosCommands.error })
+      .from(byosCommands)
+      .where(eq(byosCommands.id, id))
+      .limit(1);
+    const row = rows[0];
+
+    if (!row) break; // Revoked and cascaded away — the caller cannot wait out.
+
+    if (row.status === 'completed' || row.status === 'failed') {
+      const result = (row.result ?? {}) as Partial<WorkerResult>;
+      return {
+        commandId: id,
+        ok: row.status === 'completed',
+        data: result.data,
+        error: result.error ?? (row.status === 'failed' ? row.error ?? 'Command failed.' : undefined),
+      };
+    }
+  }
+
+  // Give up and stop the row from being claimed by a worker that arrives late.
+  await db
+    .update(byosCommands)
+    .set({ status: 'expired', error: 'The caller stopped waiting.', completedAt: new Date() })
+    .where(and(eq(byosCommands.id, id), inArray(byosCommands.status, ['queued', 'claimed'])));
+
+  throw new Error(
+    'Your server did not respond in time. Check that the karo-worker service is running and can reach the internet.',
+  );
+}
+
+/** Fire-and-forget — used for terminal keystrokes, where a result is pointless. */
+export function dispatchNoWait(workerId: string, command: WorkerCommandInput): void {
+  const id = command.id ?? newId(ID_PREFIX.task);
+  const full = { ...command, id } as WorkerCommand;
+  void db
+    .insert(byosCommands)
+    .values({
+      id,
+      workerId,
+      kind: full.kind,
+      payload: full as unknown as Record<string, unknown>,
+      timeoutAt: new Date(Date.now() + 60_000),
+    })
+    .catch((error: unknown) => {
+      log.warn('Could not queue a worker command', { workerId, kind: full.kind, error: String(error) });
+    });
+}
+
+/**
+ * The long-poll. Claims queued commands from the database; parks for up to
+ * `WORKER_POLL_HOLD_MS` when there is nothing to claim, checking every second
+ * so a command queued by a *different* instance is picked up within that
+ * interval rather than at the end of the hold.
+ */
+export async function poll(workerId: string, signal?: AbortSignal): Promise<WorkerCommand[]> {
+  const deadline = Date.now() + WORKER_POLL_HOLD_MS;
+
+  for (;;) {
+    // postgres.js (drizzle's driver here) resolves `execute` to the row array
+    // itself; other drivers wrap it in `{ rows }`. Normalise both.
+    const raw = (await db.execute(sql`
+      UPDATE byos_commands
+      SET status = 'claimed', claimed_at = now()
+      WHERE id IN (
+        SELECT id FROM byos_commands
+        WHERE worker_id = ${workerId}
+          AND status = 'queued'
+          AND timeout_at > now()
+        ORDER BY created_at ASC
+        LIMIT 10
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING payload
+    `)) as unknown as Array<{ payload: unknown }> | { rows?: Array<{ payload: unknown }> };
+
+    const rows = Array.isArray(raw) ? raw : (raw.rows ?? []);
+    const commands = rows
+      .map((row) => row.payload as WorkerCommand)
+      .filter((command) => typeof command?.kind === 'string');
+    if (commands.length) return commands;
+
+    if (signal?.aborted || Date.now() >= deadline) return [];
+    await sleep(QUEUE_CHECK_INTERVAL_MS);
+  }
+}
+
+/** Marks a claimed command finished; `dispatch`'s poll picks it up within 1s. */
+export async function complete(workerId: string, result: WorkerResult): Promise<boolean> {
+  const updated = await db
+    .update(byosCommands)
+    .set({
+      status: result.ok ? 'completed' : 'failed',
+      result: { ok: result.ok, data: result.data, error: result.error },
+      error: result.error ?? null,
+      completedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(byosCommands.id, result.commandId),
+        eq(byosCommands.workerId, workerId),
+        inArray(byosCommands.status, ['queued', 'claimed']),
+      ),
+    )
+    .returning({ id: byosCommands.id });
+
+  if (!updated.length) {
+    // Late result after a timeout — safe to drop, but worth knowing about.
+    log.debug('Received a result for an unknown command', { commandId: result.commandId });
+  }
+  return updated.length > 0;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Terminal events — in-process, best-effort (see the module comment)
+ * ------------------------------------------------------------------ */
 
 type WorkerState = {
-  queue: WorkerCommand[];
-  pending: Map<string, PendingCommand>;
-  /** Resolves the current long-poll as soon as work arrives. */
-  poller: ((commands: WorkerCommand[]) => void) | null;
   events: Map<string, Array<(event: WorkerEvent) => void>>;
-  lastSeenAt: number;
 };
 
 const workers = new Map<string, WorkerState>();
@@ -129,112 +286,15 @@ const workers = new Map<string, WorkerState>();
 function state(workerId: string): WorkerState {
   let entry = workers.get(workerId);
   if (!entry) {
-    entry = { queue: [], pending: new Map(), poller: null, events: new Map(), lastSeenAt: 0 };
+    entry = { events: new Map() };
     workers.set(workerId, entry);
   }
   return entry;
 }
 
-export const WORKER_POLL_HOLD_MS = 25_000;
-const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
-
-/**
- * Queues a command for a worker and waits for its result.
- * Rejects with a clear message when the worker never picks it up.
- */
-export function dispatch(
-  workerId: string,
-  command: WorkerCommandInput,
-  timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS,
-): Promise<WorkerResult> {
-  const entry = state(workerId);
-  const full = { ...command, id: command.id ?? newId(ID_PREFIX.task) } as WorkerCommand;
-
-  return new Promise<WorkerResult>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      entry.pending.delete(full.id);
-      entry.queue = entry.queue.filter((c) => c.id !== full.id);
-      reject(
-        new Error(
-          'Your server did not respond in time. Check that the karo-worker service is running and can reach the internet.',
-        ),
-      );
-    }, timeoutMs);
-
-    entry.pending.set(full.id, { command: full, resolve, reject, timer, queuedAt: Date.now() });
-    entry.queue.push(full);
-
-    // Wake a parked long-poll immediately.
-    if (entry.poller) {
-      const poller = entry.poller;
-      entry.poller = null;
-      const batch = entry.queue.splice(0, entry.queue.length);
-      poller(batch);
-    }
-  });
-}
-
-/** Fire-and-forget — used for terminal keystrokes, where a result is pointless. */
-export function dispatchNoWait(workerId: string, command: WorkerCommandInput): void {
-  const entry = state(workerId);
-  const full = { ...command, id: command.id ?? newId(ID_PREFIX.task) } as WorkerCommand;
-  entry.queue.push(full);
-  if (entry.poller) {
-    const poller = entry.poller;
-    entry.poller = null;
-    poller(entry.queue.splice(0, entry.queue.length));
-  }
-}
-
-/**
- * The long-poll. Returns immediately when work is queued, otherwise parks for
- * up to `WORKER_POLL_HOLD_MS` and returns an empty batch so the worker can
- * re-poll with a fresh token check.
- */
-export function poll(workerId: string, signal?: AbortSignal): Promise<WorkerCommand[]> {
-  const entry = state(workerId);
-  entry.lastSeenAt = Date.now();
-
-  if (entry.queue.length) {
-    return Promise.resolve(entry.queue.splice(0, entry.queue.length));
-  }
-
-  return new Promise<WorkerCommand[]>((resolve) => {
-    const finish = (commands: WorkerCommand[]) => {
-      clearTimeout(timer);
-      if (entry.poller === resolveRef) entry.poller = null;
-      resolve(commands);
-    };
-    const resolveRef = finish;
-    entry.poller = resolveRef;
-
-    const timer = setTimeout(() => finish([]), WORKER_POLL_HOLD_MS);
-    signal?.addEventListener('abort', () => finish([]), { once: true });
-  });
-}
-
-export function complete(workerId: string, result: WorkerResult): boolean {
-  const entry = state(workerId);
-  entry.lastSeenAt = Date.now();
-
-  const pending = entry.pending.get(result.commandId);
-  if (!pending) {
-    // Late result after a timeout — safe to drop, but worth knowing about.
-    log.debug('Received a result for an unknown command', { commandId: result.commandId });
-    return false;
-  }
-  clearTimeout(pending.timer);
-  entry.pending.delete(result.commandId);
-  pending.resolve(result);
-  return true;
-}
-
 export function emitEvent(workerId: string, event: WorkerEvent): void {
-  const entry = state(workerId);
-  entry.lastSeenAt = Date.now();
-
   const key = 'sessionId' in event ? event.sessionId : event.sandboxExternalId;
-  for (const listener of entry.events.get(key) ?? []) {
+  for (const listener of state(workerId).events.get(key) ?? []) {
     try {
       listener(event);
     } catch (error) {
@@ -261,36 +321,60 @@ export function subscribe(
   };
 }
 
-export function workerIsConnected(workerId: string, maxAgeMs = 60_000): boolean {
-  const entry = workers.get(workerId);
-  return Boolean(entry && Date.now() - entry.lastSeenAt < maxAgeMs);
+/* ------------------------------------------------------------------ *
+ *  Liveness — read from the heartbeat the database already records
+ * ------------------------------------------------------------------ */
+
+/**
+ * True when the worker's last authenticated call (poll or heartbeat, both of
+ * which stamp `last_heartbeat_at`) is recent. Reading the database instead of
+ * process memory is what makes this meaningful on serverless, where the
+ * instance asking is usually not the instance the worker talked to last.
+ */
+export async function isWorkerOnline(workerId: string, maxAgeMs = 60_000): Promise<boolean> {
+  const rows = await db
+    .select({ lastHeartbeatAt: byosWorkers.lastHeartbeatAt })
+    .from(byosWorkers)
+    .where(eq(byosWorkers.id, workerId))
+    .limit(1);
+
+  const last = rows[0]?.lastHeartbeatAt;
+  return Boolean(last && Date.now() - last.getTime() < maxAgeMs);
 }
 
-export function markSeen(workerId: string): void {
-  state(workerId).lastSeenAt = Date.now();
+export async function workerStats(workerId: string) {
+  const [worker] = await db
+    .select({ lastHeartbeatAt: byosWorkers.lastHeartbeatAt })
+    .from(byosWorkers)
+    .where(eq(byosWorkers.id, workerId))
+    .limit(1);
+
+  const queued = await db
+    .select({ status: byosCommands.status, count: sql<number>`count(*)::int` })
+    .from(byosCommands)
+    .where(and(eq(byosCommands.workerId, workerId), inArray(byosCommands.status, ['queued', 'claimed'])))
+    .groupBy(byosCommands.status);
+
+  const sum = queued.reduce((total, row) => total + Number(row.count), 0);
+  const last = worker?.lastHeartbeatAt ?? null;
+
+  return {
+    connected: Boolean(last && Date.now() - last.getTime() < 60_000),
+    queued: queued.find((row) => row.status === 'queued')?.count ?? 0,
+    pending: queued.find((row) => row.status === 'claimed')?.count ?? 0,
+    lastSeenAt: last,
+    inFlight: sum,
+  };
 }
 
 /** Fails every outstanding command — used when a worker is revoked. */
-export function drainWorker(workerId: string, reason: string): void {
-  const entry = workers.get(workerId);
-  if (!entry) return;
-  for (const pending of entry.pending.values()) {
-    clearTimeout(pending.timer);
-    pending.reject(new Error(reason));
-  }
-  entry.pending.clear();
-  entry.queue = [];
-  entry.poller?.([]);
-  entry.poller = null;
-  workers.delete(workerId);
+export async function drainWorker(workerId: string, reason: string): Promise<void> {
+  await db
+    .update(byosCommands)
+    .set({ status: 'failed', error: reason, completedAt: new Date() })
+    .where(and(eq(byosCommands.workerId, workerId), inArray(byosCommands.status, ['queued', 'claimed'])));
 }
 
-export function workerStats(workerId: string) {
-  const entry = workers.get(workerId);
-  return {
-    connected: workerIsConnected(workerId),
-    queued: entry?.queue.length ?? 0,
-    pending: entry?.pending.size ?? 0,
-    lastSeenAt: entry?.lastSeenAt ? new Date(entry.lastSeenAt) : null,
-  };
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

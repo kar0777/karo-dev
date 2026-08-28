@@ -98,6 +98,14 @@ export const toolCallStatusEnum = pgEnum('tool_call_status', [
 
 export const planTierEnum = pgEnum('plan_tier', ['payg', 'lite', 'pro', 'scale', 'ultra']);
 
+export const byosCommandStatusEnum = pgEnum('byos_command_status', [
+  'queued',
+  'claimed',
+  'completed',
+  'failed',
+  'expired',
+]);
+
 export const subscriptionStatusEnum = pgEnum('subscription_status', [
   'trialing',
   'active',
@@ -955,6 +963,38 @@ export const byosWorkers = pgTable(
  *  Conversations, messages, agent runs
  * ------------------------------------------------------------------ */
 
+/**
+ * Karo Worker Protocol v1 command queue.
+ *
+ * Commands for BYOS workers are persisted, not held in process memory: on
+ * serverless hosting the instance that queues a "create sandbox" command is
+ * rarely the instance holding the worker's long-poll, and an in-memory queue
+ * would strand the command until its timeout on every request. The long-poll
+ * claims queued rows with `FOR UPDATE SKIP LOCKED`, so any instance can serve
+ * any worker, and a second worker of the same team can never steal a command.
+ */
+export const byosCommands = pgTable(
+  'byos_commands',
+  {
+    id: id(),
+    workerId: text('worker_id')
+      .notNull()
+      .references(() => byosWorkers.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    /** The full command payload exactly as dispatched. */
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    status: byosCommandStatusEnum('status').notNull().default('queued'),
+    result: jsonb('result').$type<Record<string, unknown>>(),
+    error: text('error'),
+    /** Past this point an unclaimed command expires; its caller gives up. */
+    timeoutAt: timestamp('timeout_at', { withTimezone: true }).notNull(),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('byos_commands_worker_idx').on(t.workerId, t.status, t.createdAt)],
+);
+
 export const conversations = pgTable(
   'conversations',
   {
@@ -1774,6 +1814,8 @@ export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxSession = typeof sandboxSessions.$inferSelect;
 export type TerminalSession = typeof terminalSessions.$inferSelect;
 export type ByosWorker = typeof byosWorkers.$inferSelect;
+export type ByosCommand = typeof byosCommands.$inferSelect;
+export type NewByosCommand = typeof byosCommands.$inferInsert;
 export type Provider = typeof providers.$inferSelect;
 export type Model = typeof models.$inferSelect;
 export type ModelPrice = typeof modelPrices.$inferSelect;

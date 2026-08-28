@@ -19,8 +19,8 @@ import { SandboxError } from '../types';
 import {
   dispatch,
   dispatchNoWait,
+  isWorkerOnline,
   subscribe,
-  workerIsConnected,
   type WorkerEvent,
 } from '../worker-bus';
 
@@ -54,7 +54,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
     this.routes.set(sandboxId, { workerId, externalId });
   }
 
-  private route(sandboxId: string): { workerId: string; externalId: string } {
+  private async route(sandboxId: string): Promise<{ workerId: string; externalId: string }> {
     const entry = this.routes.get(sandboxId);
     if (!entry) {
       throw new SandboxError(
@@ -63,7 +63,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
         { status: 404 },
       );
     }
-    if (!workerIsConnected(entry.workerId)) {
+    if (!(await isWorkerOnline(entry.workerId))) {
       throw new SandboxError(
         'worker_offline',
         'Your server is not connected. Start the karo-worker service and try again.',
@@ -81,7 +81,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
         { status: 400 },
       );
     }
-    if (!workerIsConnected(options.workerId)) {
+    if (!(await isWorkerOnline(options.workerId))) {
       throw new SandboxError(
         'worker_offline',
         'The selected server is offline. Check that karo-worker is running on it.',
@@ -128,12 +128,12 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async startSandbox(id: string): Promise<void> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     await this.expectOk(dispatch(workerId, { kind: 'start', sandboxExternalId: externalId }));
   }
 
   async stopSandbox(id: string): Promise<void> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     await this.expectOk(dispatch(workerId, { kind: 'stop', sandboxExternalId: externalId }));
   }
 
@@ -141,7 +141,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
     const entry = this.routes.get(id);
     if (!entry) return;
     try {
-      if (workerIsConnected(entry.workerId)) {
+      if (await isWorkerOnline(entry.workerId)) {
         await dispatch(entry.workerId, {
           kind: 'destroy',
           sandboxExternalId: entry.externalId,
@@ -155,7 +155,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   async getStatus(id: string): Promise<SandboxRuntimeStatus> {
     const entry = this.routes.get(id);
     if (!entry) return 'destroyed';
-    if (!workerIsConnected(entry.workerId)) return 'sleeping';
+    if (!(await isWorkerOnline(entry.workerId))) return 'sleeping';
     try {
       const result = await dispatch(
         entry.workerId,
@@ -170,7 +170,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async execute(id: string, command: ExecuteCommand): Promise<ExecutionResult> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     const started = Date.now();
 
     const result = await dispatch(
@@ -213,7 +213,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
     id: string,
     options: TerminalStreamOptions,
   ): AsyncIterable<TerminalChunk> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
 
     const queue: TerminalChunk[] = [];
     let done = false;
@@ -267,7 +267,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async writeTerminal(id: string, sessionId: string, data: string): Promise<void> {
-    const { workerId } = this.route(id);
+    const { workerId } = await this.route(id);
     dispatchNoWait(workerId, { kind: 'terminal_input', sessionId, data });
   }
 
@@ -277,17 +277,17 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
     cols: number,
     rows: number,
   ): Promise<void> {
-    const { workerId } = this.route(id);
+    const { workerId } = await this.route(id);
     dispatchNoWait(workerId, { kind: 'terminal_resize', sessionId, cols, rows });
   }
 
   async killTerminal(id: string, sessionId: string): Promise<void> {
-    const { workerId } = this.route(id);
+    const { workerId } = await this.route(id);
     dispatchNoWait(workerId, { kind: 'terminal_input', sessionId, data: '\x03' });
   }
 
   async uploadFiles(id: string, files: FileInput[]): Promise<void> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     await this.expectOk(
       dispatch(workerId, {
         kind: 'write_files',
@@ -305,7 +305,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async downloadFile(id: string, path: string): Promise<Buffer> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     const result = await dispatch(workerId, {
       kind: 'read_file',
       sandboxExternalId: externalId,
@@ -321,7 +321,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async listFiles(id: string, path: string): Promise<FileEntry[]> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     const result = await dispatch(workerId, {
       kind: 'list_files',
       sandboxExternalId: externalId,
@@ -347,7 +347,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async deleteFile(id: string, path: string): Promise<void> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     await this.expectOk(
       dispatch(workerId, {
         kind: 'delete_file',
@@ -358,7 +358,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async getMetrics(id: string): Promise<SandboxMetrics> {
-    const { workerId, externalId } = this.route(id);
+    const { workerId, externalId } = await this.route(id);
     const result = await dispatch(
       workerId,
       { kind: 'metrics', sandboxExternalId: externalId },

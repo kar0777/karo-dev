@@ -70,7 +70,7 @@ export const POST = defineHandler(
       .where(eq(byosWorkers.id, id))
       .returning();
 
-    drainWorker(
+    await drainWorker(
       id,
       'This server’s token was rotated. Re-run the install command with the new token to reconnect it.',
     );
