@@ -1,10 +1,12 @@
 /**
- * Registry of OpenAI-compatible model providers.
+ * Registry of model providers.
  *
- * Every provider Karo talks to speaks the same wire protocol — `POST
- * {baseUrl}/chat/completions` with `Authorization: Bearer <key>`, SSE streaming
- * and OpenAI-shaped `tools`. That means a provider is **data, not code**: one
+ * Most providers Karo talks to speak the OpenAI Chat Completions wire protocol
+ * — `POST {baseUrl}/chat/completions` with `Authorization: Bearer <key>`, SSE
+ * streaming and OpenAI-shaped `tools` — so they are **data, not code**: one
  * entry here is enough, and `OpenAiCompatibleProvider` handles the rest.
+ * Descriptors with `protocol: 'anthropic-messages'` are served by
+ * `AnthropicMessagesProvider` instead and need no further code.
  *
  * This module is deliberately free of `server-only` and reads no environment,
  * so Server Components and the seed script can both import the metadata. The
@@ -24,6 +26,12 @@ export type ProviderDescriptor = {
   /** Stable machine key. Matches `providers.key` in the database. */
   key: string;
   displayName: string;
+  /**
+   * Wire protocol the upstream speaks. Defaults to the OpenAI Chat
+   * Completions shape; `anthropic-messages` switches to Anthropic's
+   * `/v1/messages` protocol (x-api-key, content blocks, tool_use/tool_result).
+   */
+  protocol?: 'openai-chat' | 'anthropic-messages';
   /**
    * Environment variable supplying the API key. `null` marks a keyless
    * provider (a local server), which is treated as configured only when its
@@ -255,6 +263,34 @@ export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
     catalogUrl: 'https://omniakey.com/models',
     summary:
       'A reseller discounting Claude, GPT, Gemini and Grok. Pick it when you specifically need a closed frontier model rather than the cheapest capable one.',
+  },
+  {
+    key: 'anthropic',
+    displayName: 'Anthropic',
+    apiKeyEnv: 'ANTHROPIC_API_KEY',
+    baseUrlEnv: 'ANTHROPIC_BASE_URL',
+    defaultBaseUrl: 'https://api.anthropic.com',
+    protocol: 'anthropic-messages',
+    autoPriority: 62,
+    signupUrl: 'https://console.anthropic.com/settings/keys',
+    docsUrl: 'https://docs.anthropic.com/en/api/messages',
+    catalogUrl: 'https://docs.anthropic.com/en/docs/about-claude/models/overview',
+    summary:
+      'The Claude family first-hand at published prices, on the native Messages protocol with first-class tool calling and exact cache accounting. The resellers discount the same models when provenance matters less than cost.',
+  },
+  {
+    key: 'hypercli',
+    displayName: 'HyperCLI',
+    apiKeyEnv: 'HYPERCLI_API_KEY',
+    baseUrlEnv: 'HYPERCLI_BASE_URL',
+    defaultBaseUrl: 'https://api.hypercli.com',
+    protocol: 'anthropic-messages',
+    autoPriority: 64,
+    signupUrl: 'https://agents.hypercli.com',
+    docsUrl: 'https://docs.hypercli.com/agents/integrations',
+    catalogUrl: 'https://docs.hypercli.com/agents/integrations',
+    summary:
+      'Kimi K3 on flat-rate plans (a daily token allowance, 25M-100M tokens/day, instead of per-token billing), served on the Anthropic Messages route its docs recommend for tool calling. The daily quota lives on the HyperCLI account, so Karo still meters usage at reference prices for your own margin math.',
   },
   {
     key: 'ollama',

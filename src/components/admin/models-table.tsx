@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, History, RefreshCw, Save, Search, X } from 'lucide-react';
+import { Check, History, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
@@ -87,6 +87,7 @@ export function ModelsTable({ models }: { models: AdminModelRow[] }) {
     errors: Array<{ provider: string; message: string }>;
   } | null>(null);
   const [savingId, setSavingId] = React.useState<string | null>(null);
+  const [adding, setAdding] = React.useState(false);
 
   const visible = models.filter((model) => {
     if (scope === 'enabled' && !model.isEnabled) return false;
@@ -174,7 +175,13 @@ export function ModelsTable({ models }: { models: AdminModelRow[] }) {
         >
           Sync from provider
         </Button>
+
+        <Button size="sm" variant="secondary" iconLeft={<Plus />} onClick={() => setAdding(true)}>
+          Add model
+        </Button>
       </div>
+
+      <AddModelSheet open={adding} onClose={() => setAdding(false)} />
 
       {syncReport ? (
         <Alert variant={syncReport.errors.length > 0 ? 'warning' : 'success'}>
@@ -644,6 +651,233 @@ function ModelDrawer({ model, onClose }: { model: AdminModelRow | null; onClose:
             </Button>
           </section>
         </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Manual model creation
+ * ------------------------------------------------------------------ */
+
+type ProviderOption = { key: string; name: string; credentialConfigured: boolean };
+
+/**
+ * The manual complement to "Sync from provider": discovery imports what the
+ * upstream's `/models` endpoint reports, but a reachable model can be missing
+ * from that list, so an admin can add one by hand. Created without prices the
+ * model lands disabled — the same guardrail the sync path applies.
+ */
+function AddModelSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter();
+  const [providers, setProviders] = React.useState<ProviderOption[] | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const [form, setForm] = React.useState({
+    providerKey: '',
+    slug: '',
+    displayName: '',
+    contextWindow: '128000',
+    inputPrice: '',
+    outputPrice: '',
+    minPlanTier: 'payg',
+    supportsVision: false,
+  });
+
+  React.useEffect(() => {
+    if (!open || providers) return;
+    let cancelled = false;
+    apiFetch<{ providers: ProviderOption[] }>('/api/admin/providers')
+      .then((result) => {
+        if (!cancelled) {
+          setProviders(result.providers);
+          setForm((current) => ({ ...current, providerKey: current.providerKey || result.providers[0]?.key || '' }));
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) setLoadError(describeError(caught).message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, providers]);
+
+  const priced = form.inputPrice.trim() !== '' && form.outputPrice.trim() !== '';
+
+  async function create() {
+    if (!form.providerKey || !form.slug.trim() || !form.displayName.trim()) return;
+    setBusy(true);
+    try {
+      const contextWindow = Number.parseInt(form.contextWindow, 10);
+      const body: Record<string, unknown> = {
+        providerKey: form.providerKey,
+        slug: form.slug.trim(),
+        displayName: form.displayName.trim(),
+        contextWindow: Number.isFinite(contextWindow) ? contextWindow : 128_000,
+        minPlanTier: form.minPlanTier,
+        supportsVision: form.supportsVision,
+      };
+      if (priced) {
+        const input = toMicro(form.inputPrice);
+        body.prices = {
+          inputMicroUsdPerMtok: input,
+          outputMicroUsdPerMtok: toMicro(form.outputPrice),
+          // No published cache figures at creation time; both follow the input
+          // rate (the open-weight convention) until an admin sets real ones.
+          cachedInputMicroUsdPerMtok: input,
+          cacheWriteMicroUsdPerMtok: input,
+        };
+      }
+      await apiFetch('/api/admin/models', { method: 'POST', json: body });
+      toast.success('Model added', {
+        description: priced ? form.displayName : `${form.displayName} — disabled until priced.`,
+      });
+      setForm((current) => ({ ...current, slug: '', displayName: '', inputPrice: '', outputPrice: '' }));
+      onClose();
+      router.refresh();
+    } catch (caught) {
+      const described = describeError(caught);
+      toast.error(described.title, { description: described.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={(value) => (value ? null : onClose())}>
+      <SheetContent side="right" className="w-[min(32rem,calc(100vw-1.5rem))] p-0">
+        <SheetHeader className="px-4 py-3">
+          <SheetTitle>Add a model manually</SheetTitle>
+        </SheetHeader>
+        <form
+          className="flex flex-col gap-4 overflow-y-auto px-4 pb-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void create();
+          }}
+        >
+          {loadError ? (
+            <Alert variant="warning">
+              <AlertTitle>Providers unavailable</AlertTitle>
+              <AlertDescription>{loadError}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <Field>
+            <FieldLabel htmlFor="add-model-provider">Provider</FieldLabel>
+            <select
+              id="add-model-provider"
+              className="border-default bg-surface focus:ring-accent h-9 w-full rounded-md border px-2 text-sm"
+              value={form.providerKey}
+              onChange={(event) => setForm({ ...form, providerKey: event.target.value })}
+            >
+              {(providers ?? []).map((provider) => (
+                <option key={provider.key} value={provider.key}>
+                  {provider.name}
+                  {provider.credentialConfigured ? '' : ' (no key configured)'}
+                </option>
+              ))}
+            </select>
+            <FieldHint>
+              Missing a provider? Sync once — discovery creates nothing for a provider without a
+              key, but the provider row itself is always listed here.
+            </FieldHint>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="add-model-slug">Model id (slug)</FieldLabel>
+            <Input
+              id="add-model-slug"
+              required
+              placeholder="moonshotai/kimi-k3"
+              value={form.slug}
+              onChange={(event) => setForm({ ...form, slug: event.target.value })}
+            />
+            <FieldHint>Exactly the id the provider API expects.</FieldHint>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="add-model-name">Display name</FieldLabel>
+            <Input
+              id="add-model-name"
+              required
+              placeholder="Kimi K3"
+              value={form.displayName}
+              onChange={(event) => setForm({ ...form, displayName: event.target.value })}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="add-model-context">Context window (tokens)</FieldLabel>
+            <Input
+              id="add-model-context"
+              inputMode="numeric"
+              value={form.contextWindow}
+              onChange={(event) => setForm({ ...form, contextWindow: event.target.value })}
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field>
+              <FieldLabel htmlFor="add-model-input">Input $ / Mtok</FieldLabel>
+              <Input
+                id="add-model-input"
+                inputMode="decimal"
+                placeholder="3.00"
+                value={form.inputPrice}
+                onChange={(event) => setForm({ ...form, inputPrice: event.target.value })}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="add-model-output">Output $ / Mtok</FieldLabel>
+              <Input
+                id="add-model-output"
+                inputMode="decimal"
+                placeholder="15.00"
+                value={form.outputPrice}
+                onChange={(event) => setForm({ ...form, outputPrice: event.target.value })}
+              />
+            </Field>
+          </div>
+          <p className="text-xs text-subtle">
+            {priced
+              ? 'The model is created enabled with this tariff.'
+              : 'Leave prices empty to create the model disabled — set the tariff afterwards, then enable it.'}
+          </p>
+
+          <Field>
+            <FieldLabel htmlFor="add-model-tier">Minimum plan tier</FieldLabel>
+            <select
+              id="add-model-tier"
+              className="border-default bg-surface focus:ring-accent h-9 w-full rounded-md border px-2 text-sm"
+              value={form.minPlanTier}
+              onChange={(event) => setForm({ ...form, minPlanTier: event.target.value })}
+            >
+              {['payg', 'lite', 'pro', 'scale', 'ultra'].map((tier) => (
+                <option key={tier} value={tier}>
+                  {tier}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <label className="flex items-center gap-2 text-sm">
+            <Switch
+              checked={form.supportsVision}
+              onCheckedChange={(checked) => setForm({ ...form, supportsVision: checked })}
+            />
+            Supports image input
+          </label>
+
+          <div className="mt-2 flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={busy} iconLeft={<Check />}>
+              Add model
+            </Button>
+          </div>
+        </form>
       </SheetContent>
     </Sheet>
   );

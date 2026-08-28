@@ -14,6 +14,7 @@ import {
   PROVIDER_DESCRIPTORS,
 } from './providers/descriptors';
 import { MockProvider } from './providers/mock';
+import { AnthropicMessagesProvider } from './providers/anthropic-messages';
 import { OpenAiCompatibleProvider } from './providers/openai-compatible';
 import { ProviderError, type ModelProvider } from './types';
 
@@ -49,7 +50,10 @@ export function getProviderByKey(key: string): ModelProvider {
     summary: 'Custom OpenAI-compatible endpoint supplied with a user key.',
   };
 
-  const adapter = new OpenAiCompatibleProvider(descriptor);
+  const adapter =
+    descriptor.protocol === 'anthropic-messages'
+      ? new AnthropicMessagesProvider(descriptor)
+      : new OpenAiCompatibleProvider(descriptor);
   adapters.set(key, adapter);
   return adapter;
 }
@@ -300,5 +304,10 @@ async function loadByokKey(
   }
 }
 
-export { MockProvider, OpenAiCompatibleProvider, PROVIDER_DESCRIPTORS };
+export {
+  MockProvider,
+  AnthropicMessagesProvider,
+  OpenAiCompatibleProvider,
+  PROVIDER_DESCRIPTORS,
+};
 export * from './types';

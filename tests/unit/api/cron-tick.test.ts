@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { syncProviderCatalogs } from '@/lib/ai/catalog-sync';
 import { applyDuePlanChanges } from '@/lib/billing/plan-changes';
 import { sweepAutoTopups } from '@/lib/billing/auto-topup';
 import { sweepIdleSandboxes } from '@/lib/sandbox/service';
@@ -10,13 +11,14 @@ import { GET } from '@/app/api/cron/tick/route';
  * The consolidated maintenance tick.
  *
  * Free hosting tiers cap how many cron entries a project may define, so the
- * three sweeps collapse into one endpoint. The contract under test: a
+ * periodic sweeps collapse into one endpoint. The contract under test: a
  * scheduler with only a bearer token gets every sweep run, one sweep failing
  * never stops the others, and the response says exactly which ones did —
  * with a 500 reserved for the single outcome worth paging on, everything
  * having failed.
  */
 
+vi.mock('@/lib/ai/catalog-sync', () => ({ syncProviderCatalogs: vi.fn() }));
 vi.mock('@/lib/billing/auto-topup', () => ({ sweepAutoTopups: vi.fn() }));
 vi.mock('@/lib/billing/plan-changes', () => ({ applyDuePlanChanges: vi.fn() }));
 vi.mock('@/lib/sandbox/service', () => ({ sweepIdleSandboxes: vi.fn() }));
@@ -59,6 +61,12 @@ beforeEach(() => {
     dropped: [],
     failed: [],
   });
+  vi.mocked(syncProviderCatalogs).mockResolvedValue({
+    syncedProviders: 2,
+    changes: [],
+    errors: [],
+    syncedAt: new Date(),
+  });
 });
 
 afterEach(() => {
@@ -83,8 +91,15 @@ describe('GET /api/cron/tick', () => {
       'sandbox-sweep',
       'billing-auto-topup',
       'billing-apply-pending',
+      'catalog-sync',
     ]);
     expect(body.jobs.every((job) => job.ok)).toBe(true);
+  });
+
+  it('passes onlyConfigured to the catalogue sync so dormant providers stay quiet', async () => {
+    await call({ authorization: `Bearer ${SECRET}` });
+
+    expect(vi.mocked(syncProviderCatalogs)).toHaveBeenCalledWith({ onlyConfigured: true });
   });
 
   it('keeps the remaining sweeps running when one fails, and says which', async () => {
@@ -111,6 +126,7 @@ describe('GET /api/cron/tick', () => {
     vi.mocked(sweepIdleSandboxes).mockRejectedValue(new Error('db down'));
     vi.mocked(sweepAutoTopups).mockRejectedValue(new Error('db down'));
     vi.mocked(applyDuePlanChanges).mockRejectedValue(new Error('db down'));
+    vi.mocked(syncProviderCatalogs).mockRejectedValue(new Error('db down'));
 
     const response = await call({ authorization: `Bearer ${SECRET}` });
 

@@ -2,6 +2,7 @@ import { authorizeCronOrAdmin } from '@/lib/api/cron-auth';
 import { defineHandler } from '@/lib/api/handler';
 import { json } from '@/lib/api/responses';
 import { AUDIT_ACTIONS } from '@/lib/audit';
+import { syncProviderCatalogs } from '@/lib/ai/catalog-sync';
 import { sweepAutoTopups } from '@/lib/billing/auto-topup';
 import { applyDuePlanChanges } from '@/lib/billing/plan-changes';
 import { sweepIdleSandboxes } from '@/lib/sandbox/service';
@@ -78,6 +79,14 @@ export const GET = defineHandler(
     await run('billing-apply-pending', async () => {
       const result = await applyDuePlanChanges();
       return `${result.applied.length} applied, ${result.dropped.length} dropped, ${result.failed.length} failed`;
+    });
+
+    // Model-catalogue discovery. A provider whose API key was added since the
+    // last tick gets its models imported here without anyone pressing Sync —
+    // unconfigured providers are skipped, not error-logged.
+    await run('catalog-sync', async () => {
+      const result = await syncProviderCatalogs({ onlyConfigured: true });
+      return `${result.changes.length} changes, ${result.errors.length} errors across ${result.syncedProviders} providers`;
     });
 
     const failedCount = jobs.filter((job) => !job.ok).length;
