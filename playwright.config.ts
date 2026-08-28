@@ -123,6 +123,19 @@ export default defineConfig({
         timeout: 180_000,
         stdout: 'ignore',
         stderr: 'pipe',
+        env: {
+          ...process.env,
+          /**
+           * The suite signs in from one IP as one account, tens of times
+           * within the `auth.login` bucket's 5-minute window, so the real
+           * limiter turns the tail of the run into a wall of 429s — a
+           * property of sharing a browser between tests, not of the
+           * product. The unit suite disables it for the same reason (see
+           * tests/setup.ts); here the limiter's own tests still run, this
+           * only governs the server the specs drive.
+           */
+          RATE_LIMIT_DISABLED: 'true',
+        },
       }
     : undefined,
 });

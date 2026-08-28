@@ -115,8 +115,18 @@ test.describe('authentication', () => {
   test('hides the admin area from a non-admin', async ({ page }) => {
     await signIn(page);
     const response = await page.goto('/admin');
-    // requirePlatformAdmin() calls notFound(), so /admin is not discoverable.
-    expect(response?.status()).toBe(404);
+    // requirePlatformAdmin() calls notFound(): the console is never rendered
+    // for a non-admin. The status line cannot always read 404 — the guard
+    // throws after Next has started streaming the shell, so the not-found
+    // page arrives attached to a 200 — what must hold, in dev and in a
+    // production build alike, is that the visitor lands on the not-found
+    // page and none of the admin console reaches the browser.
+    const body = (await response?.text()) ?? '';
+    const onNotFoundPage = response?.status() === 404 || /Error 404/.test(body);
+    expect(onNotFoundPage, 'a non-admin must land on the not-found page').toBe(true);
+    // The layout's static metadata may still name the page in the streamed
+    // <head>; what must never reach a non-admin is the console itself.
+    expect(body).not.toContain('Unit economics');
   });
 });
 

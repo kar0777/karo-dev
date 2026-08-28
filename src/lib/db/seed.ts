@@ -2466,6 +2466,50 @@ async function main(): Promise<void> {
   });
   console.log(`  · admin account    ${adminEmail} (Ultra)`);
 
+  /* ---- BYOS worker fixture ---- */
+  // Settings → Servers renders one card per enrolled machine, and with an
+  // empty table the section shows only its empty state — the per-machine
+  // facts the panel exists to surface (hostname, heartbeat, container
+  // runtime) never appear anywhere. A seeded deployment therefore ships one
+  // online worker with no reported capabilities: the exact "enrolled before
+  // installing Docker" shape the runtime line was built to catch, so the
+  // demo world has a machine to look at and the panel has something to say.
+  const workerSeedToken = 'karo-seed-worker-credential';
+  const existingWorker = await db
+    .select({ id: schema.byosWorkers.id })
+    .from(schema.byosWorkers)
+    .where(
+      and(
+        eq(schema.byosWorkers.teamId, adminTeam.id),
+        eq(schema.byosWorkers.name, 'studio-desktop'),
+      ),
+    );
+  if (existingWorker.length === 0) {
+    await db.insert(schema.byosWorkers).values({
+      id: newId('worker'),
+      teamId: adminTeam.id,
+      createdById: adminUser.id,
+      name: 'studio-desktop',
+      status: 'online',
+      installTokenHash: createHash('sha256').update(workerSeedToken).digest('hex'),
+      installTokenExpiresAt: new Date(Date.now() + 365 * DAY_MS),
+      workerTokenHash: createHash('sha256').update(`${workerSeedToken}:worker`).digest('hex'),
+      tokenRotatedAt: now,
+      hostname: 'studio-desktop',
+      platform: 'linux',
+      arch: 'x64',
+      agentVersion: '1.0.0',
+      // Deliberately no `capabilities`: the panel must read "Not reported
+      // yet" rather than invent a runtime the machine never reported.
+      cpuCores: 8,
+      memoryMb: 32768,
+      diskGb: 1024,
+      lastHeartbeatAt: new Date(Date.now() - 30_000),
+      registeredAt: now,
+    });
+    console.log('  · byos worker      studio-desktop (online, no capabilities)');
+  }
+
   /* ---- Demo ---- */
   const demoEmail = 'demo@karo.local';
   const demoPassword = process.env.SEED_DEMO_PASSWORD ?? 'karo-demo-2025';
