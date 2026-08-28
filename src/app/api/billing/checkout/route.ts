@@ -45,6 +45,14 @@ export const POST = defineHandler(
       });
     }
 
+    if (plan.comingSoon) {
+      throw new ConflictError('That plan is not on sale yet.', {
+        title: 'Coming soon',
+        description:
+          'This plan is advertised but not purchasable yet. Pay-as-you-go works today: add credit to your balance and use the platform immediately.',
+      });
+    }
+
     if (plan.tier === 'payg') {
       throw new ConflictError('Pay-as-you-go does not require a checkout.', {
         title: 'Nothing to check out',

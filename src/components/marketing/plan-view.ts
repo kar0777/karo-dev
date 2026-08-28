@@ -55,6 +55,9 @@ export type PlanView = {
   overageMicroUsdPerComputeHour: number;
 
   trialDays: number;
+  isActive: boolean;
+  /** Advertised but not purchasable yet — badged "Coming soon", refused at checkout. */
+  comingSoon: boolean;
   highlight: boolean;
   features: string[];
   sortOrder: number;

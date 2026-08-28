@@ -587,6 +587,13 @@ export const plans = pgTable(
     trialDays: integer('trial_days').notNull().default(0),
     isPublic: boolean('is_public').notNull().default(true),
     isActive: boolean('is_active').notNull().default(true),
+    /**
+     * Advertised but not purchasable yet: rendered on the marketing page with a
+     * "coming soon" badge and refused at checkout, while the quotas stay
+     * browsable. Distinct from `isActive` — an inactive plan disappears from
+     * the marketing page entirely.
+     */
+    comingSoon: boolean('coming_soon').notNull().default(false),
     highlight: boolean('highlight').notNull().default(false),
     features: jsonb('features').$type<string[]>().notNull().default([]),
     sortOrder: integer('sort_order').notNull().default(100),

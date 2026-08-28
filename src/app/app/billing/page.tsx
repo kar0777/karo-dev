@@ -198,6 +198,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Sear
       features: plan.features,
       highlight: plan.highlight,
       trialDays: plan.trialDays,
+      comingSoon: plan.comingSoon,
     }));
 
   const interval: 'month' | 'year' = subscription?.interval === 'year' ? 'year' : 'month';

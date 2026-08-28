@@ -142,6 +142,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     trialDays: 0,
     isPublic: true,
     isActive: true,
+    comingSoon: true,
     highlight: false,
     features: [
       '1,000,000 included weighted tokens per month — roughly 80 build turns on a frontier model',
@@ -207,6 +208,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     trialDays: 7,
     isPublic: true,
     isActive: true,
+    comingSoon: true,
     highlight: true,
     features: [
       '6,000,000 included weighted tokens per month — about six times Lite for under four times the price',
@@ -271,6 +273,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     trialDays: 0,
     isPublic: true,
     isActive: true,
+    comingSoon: true,
     highlight: false,
     features: [
       '45,000,000 included weighted tokens per month, pooled across the whole team',
@@ -335,6 +338,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     trialDays: 0,
     isPublic: true,
     isActive: true,
+    comingSoon: true,
     highlight: false,
     features: [
       '100,000,000 included weighted tokens per month, pooled across 15 seats',

@@ -35,6 +35,8 @@ export type PlanOption = {
   features: string[];
   highlight: boolean;
   trialDays: number;
+  /** Advertised but not purchasable yet; the picker badges and disables it. */
+  comingSoon: boolean;
 };
 
 export interface PlanPickerProps {
@@ -190,7 +192,10 @@ export function PlanPicker({
                         Current
                       </Badge>
                     ) : null}
-                    {!isCurrent && plan.highlight ? (
+                    {!isCurrent && plan.comingSoon ? (
+                      <Badge size="sm">Coming soon</Badge>
+                    ) : null}
+                    {!isCurrent && plan.highlight && !plan.comingSoon ? (
                       <Badge variant="ember" size="sm">
                         Most picked
                       </Badge>
@@ -243,7 +248,7 @@ export function PlanPicker({
                   }
                   onClick={() => void choose(plan)}
                   loading={busy}
-                  disabled={!canManage || isCurrentExact || pendingKey !== null}
+                  disabled={!canManage || isCurrentExact || pendingKey !== null || plan.comingSoon}
                 >
                   {isCurrentExact ? (
                     'Your plan'

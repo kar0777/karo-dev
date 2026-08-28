@@ -56,7 +56,11 @@ export function PlanCard({ plan, interval, maxFeatures, className }: PlanCardPro
 
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-base font-semibold text-fg">{plan.name}</h3>
-        {plan.trialDays > 0 ? (
+        {plan.comingSoon ? (
+          <Badge variant="neutral" size="sm">
+            Coming soon
+          </Badge>
+        ) : plan.trialDays > 0 ? (
           <Badge variant="neutral" size="sm">
             {plan.trialDays}-day trial
           </Badge>
@@ -88,11 +92,17 @@ export function PlanCard({ plan, interval, maxFeatures, className }: PlanCardPro
         )}
       </p>
 
-      <Button asChild className="mt-4" size="lg">
-        <Link href={`/register?plan=${encodeURIComponent(plan.key)}`}>
-          {isPayg ? 'Start with a balance' : `Start on ${plan.name}`}
-        </Link>
-      </Button>
+      {plan.comingSoon ? (
+        <Button className="mt-4 size-lg" size="lg" variant="secondary" disabled>
+          Not on sale yet
+        </Button>
+      ) : (
+        <Button asChild className="mt-4" size="lg">
+          <Link href={`/register?plan=${encodeURIComponent(plan.key)}`}>
+            {isPayg ? 'Start with a balance' : `Start on ${plan.name}`}
+          </Link>
+        </Button>
+      )}
 
       <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-4">
         <Spec

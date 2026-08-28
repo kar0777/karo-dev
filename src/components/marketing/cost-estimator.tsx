@@ -49,6 +49,9 @@ function stopAt(stops: readonly number[], index: number): number {
   return stops[Math.min(Math.max(index, 0), stops.length - 1)] ?? stops[0] ?? 0;
 }
 
+/** Savings under this are noise; never churn the selection for them. */
+const AUTO_SWITCH_EPSILON_MICRO_USD = 1_000_000;
+
 export type CostEstimatorProps = {
   plans: readonly PlanView[];
   models: readonly ModelPriceView[];
@@ -81,25 +84,6 @@ export function CostEstimator({
   const plan = plans.find((entry) => entry.key === planKey) ?? plans[0];
   const model = usableModels.find((entry) => entry.slug === modelSlug) ?? usableModels[0];
 
-  if (!plan || !model) {
-    return (
-      <div className={cn('rounded-lg border border-line bg-surface p-5', className)}>
-        <p className="text-[13px] text-muted">
-          The estimator needs the plan and model catalogue, which is unavailable right now.
-          Refresh in a moment, or read the worked examples above — the arithmetic is the same.
-        </p>
-      </div>
-    );
-  }
-
-  // Sizes the selected plan is actually allowed to run.
-  const sizes = SANDBOX_SIZE_PRESETS.filter(
-    (preset) =>
-      preset.cpuCores <= plan.maxSandboxCpuCores && preset.memoryMb <= plan.maxSandboxMemoryMb,
-  );
-  const size =
-    sizes.find((preset) => preset.key === sizeKey) ?? sizes[0] ?? SANDBOX_SIZE_PRESETS[0]!;
-
   const totalTokens = stopAt(TOKEN_STOPS, tokenIndex) * 1_000_000;
   const wallClockHours = stopAt(HOUR_STOPS, hourIndex);
 
@@ -110,20 +94,22 @@ export function CostEstimator({
   };
 
   const prices = {
-    inputMicroUsdPerMtok: model.inputMicroUsdPerMtok,
-    outputMicroUsdPerMtok: model.outputMicroUsdPerMtok,
-    cachedInputMicroUsdPerMtok: model.cachedInputMicroUsdPerMtok,
-    cacheWriteMicroUsdPerMtok: model.cacheWriteMicroUsdPerMtok,
+    inputMicroUsdPerMtok: model?.inputMicroUsdPerMtok ?? 0,
+    outputMicroUsdPerMtok: model?.outputMicroUsdPerMtok ?? 0,
+    cachedInputMicroUsdPerMtok: model?.cachedInputMicroUsdPerMtok ?? 0,
+    cacheWriteMicroUsdPerMtok: model?.cacheWriteMicroUsdPerMtok ?? 0,
   };
 
-  const planConfig = {
-    tier: plan.tier,
-    marginBps: plan.marginBps,
-    includedWeightedTokens: plan.includedWeightedTokens,
-    includedComputeHours: plan.includedComputeHours,
-    overageMicroUsdPerMWeighted: plan.overageMicroUsdPerMWeighted,
-    overageMicroUsdPerComputeHour: plan.overageMicroUsdPerComputeHour,
-  };
+  // Sizes the selected plan is actually allowed to run.
+  const sizes = plan
+    ? SANDBOX_SIZE_PRESETS.filter(
+        (preset) =>
+          preset.cpuCores <= plan.maxSandboxCpuCores &&
+          preset.memoryMb <= plan.maxSandboxMemoryMb,
+      )
+    : [];
+  const size =
+    sizes.find((preset) => preset.key === sizeKey) ?? sizes[0] ?? SANDBOX_SIZE_PRESETS[0]!;
 
   const multiplier = calculateComputeMultiplier({
     cpuCores: size.cpuCores,
@@ -131,25 +117,84 @@ export function CostEstimator({
   });
   const billedHours = Math.round(wallClockHours * multiplier.value * 10_000) / 10_000;
 
-  const modelSettlement = settleModelUsage({
-    counts,
-    prices,
-    plan: planConfig,
-    quotaRemainingWeighted: plan.includedWeightedTokens,
-    usedByok: byok,
-  });
+  /**
+   * The same settlement run for any plan, holding the usage fixed. This is
+   * what powers the auto-switch: without a cross-plan comparison the
+   * estimator happily quoted a selected Lite plan at $1,790/month for usage
+   * that costs $690 on Ultra.
+   */
+  const estimateForPlan = (candidate: PlanView) => {
+    const planConfig = {
+      tier: candidate.tier,
+      marginBps: candidate.marginBps,
+      includedWeightedTokens: candidate.includedWeightedTokens,
+      includedComputeHours: candidate.includedComputeHours,
+      overageMicroUsdPerMWeighted: candidate.overageMicroUsdPerMWeighted,
+      overageMicroUsdPerComputeHour: candidate.overageMicroUsdPerComputeHour,
+    };
+    const modelSettlement = settleModelUsage({
+      counts,
+      prices,
+      plan: planConfig,
+      quotaRemainingWeighted: candidate.includedWeightedTokens,
+      usedByok: byok,
+    });
+    const computeSettlement = settleComputeUsage({
+      billedComputeHours: billedHours,
+      upstreamMicroUsdPerBaseHour: computeUpstreamMicroUsdPerBaseHour,
+      plan: planConfig,
+      quotaRemainingHours: candidate.includedComputeHours,
+    });
+    return {
+      plan: candidate,
+      modelSettlement,
+      computeSettlement,
+      total:
+        candidate.priceMicroUsdMonthly +
+        modelSettlement.chargedMicroUsd +
+        computeSettlement.chargedMicroUsd,
+    };
+  };
 
-  const computeSettlement = settleComputeUsage({
-    billedComputeHours: billedHours,
-    upstreamMicroUsdPerBaseHour: computeUpstreamMicroUsdPerBaseHour,
-    plan: planConfig,
-    quotaRemainingHours: plan.includedComputeHours,
-  });
+  const selected = plan ? estimateForPlan(plan) : null;
+  const ranked = plans.map(estimateForPlan).sort((a, b) => a.total - b.total);
+  const best = ranked[0] ?? null;
 
-  const total =
-    plan.priceMicroUsdMonthly +
-    modelSettlement.chargedMicroUsd +
-    computeSettlement.chargedMicroUsd;
+  // Auto-switch at the crossover. Crossing the threshold where a bigger plan
+  // becomes cheaper is exactly when a reader is least likely to run the
+  // comparison themselves — the $5 plan quoting four figures is the failure
+  // mode this exists to prevent. Derived during render (state follows the
+  // numbers) rather than in an effect, so no intermediate frame shows the
+  // dominated plan.
+  const [switchNote, setSwitchNote] = React.useState<{ name: string; saved: number } | null>(
+    null,
+  );
+  const [seenBestKey, setSeenBestKey] = React.useState<string | null>(null);
+  if (selected && best && best.plan.key !== planKey && seenBestKey !== best.plan.key) {
+    const saved = selected.total - best.total;
+    if (saved >= AUTO_SWITCH_EPSILON_MICRO_USD) {
+      setSeenBestKey(best.plan.key);
+      setPlanKey(best.plan.key);
+      setSwitchNote({ name: best.plan.name, saved });
+    } else {
+      // Keep the best-seen marker in sync so the switch fires the moment the
+      // threshold is crossed rather than a render later.
+      setSeenBestKey(best.plan.key);
+    }
+  }
+
+  if (!plan || !model || !selected) {
+    return (
+      <div className={cn('rounded-lg border border-line bg-surface p-5', className)}>
+        <p className="text-[13px] text-muted">
+          The estimator needs the plan and model catalogue, which is unavailable right now.
+          Refresh in a moment, or read the worked examples above — the arithmetic is the same.
+        </p>
+      </div>
+    );
+  }
+
+  const { modelSettlement, computeSettlement, total } = selected;
 
   return (
     <div className={cn('grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]', className)}>
@@ -159,11 +204,20 @@ export function CostEstimator({
           <SegmentedControl
             options={plans.map((entry) => ({ value: entry.key, label: entry.name }))}
             value={plan.key}
-            onValueChange={setPlanKey}
+            onValueChange={(value) => {
+              setPlanKey(value);
+              setSwitchNote(null);
+            }}
             size="sm"
             aria-label="Plan"
             className="flex-wrap"
           />
+          {switchNote ? (
+            <p className="mt-1.5 text-[11.5px] leading-snug text-primary">
+              Switched to {switchNote.name} — {formatMicroUsd(switchNote.saved)} cheaper per
+              month at this usage. Pick another plan above to compare by hand.
+            </p>
+          ) : null}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

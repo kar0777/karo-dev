@@ -96,16 +96,17 @@ describe('worker bus against a real database', () => {
     // run — must claim what dispatch inserted.
     const commands = await poll(ids.worker);
     expect(commands).toHaveLength(1);
-    expect(commands[0]).toMatchObject({ kind: 'status', sandboxExternalId: 'karo-fixture' });
+    const command = commands[0]!;
+    expect(command).toMatchObject({ kind: 'status', sandboxExternalId: 'karo-fixture' });
 
     await complete(ids.worker, {
-      commandId: commands[0].id,
+      commandId: command.id,
       ok: true,
       data: { status: 'running' },
     });
 
     const result = await pending;
-    expect(result).toMatchObject({ commandId: commands[0].id, ok: true });
+    expect(result).toMatchObject({ commandId: command.id, ok: true });
     expect((result.data as { status?: string }).status).toBe('running');
   });
 
