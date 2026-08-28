@@ -1,0 +1,23 @@
+{
+  /**
+   * Compiler options for the standalone database scripts (db:migrate,
+   * db:seed, db:reset), which tsx runs outside Next.
+   *
+   * Those scripts legitimately reuse server modules — password hashing, the
+   * seed dataset — and some of them import `server-only`. Inside Next the
+   * package is the Client-Component guard it is meant to be; in a plain Node
+   * process it throws on import, which is why vitest aliases it to a stub
+   * (see vitest.config.ts). Scripts need the same courtesy, so this config
+   * extends the main one with that single mapping — it is read only by the
+   * `db:*` npm scripts via `tsx --tsconfig` and never by a Next build, whose
+   * guard therefore stays real.
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "server-only": ["./tests/stubs/server-only.ts"]
+    }
+  }
+}
