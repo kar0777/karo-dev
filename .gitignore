@@ -1,0 +1,76 @@
+# ------------------------------------------------------------------ #
+#  Karo — ignored paths
+#
+#  Rule of thumb: anything a tool regenerates is ignored, anything a
+#  human authored is committed. The Drizzle migration folder (./drizzle)
+#  is AUTHORED OUTPUT — it is committed on purpose, including
+#  drizzle/meta/_journal.json, because migrations must be reproducible
+#  on every machine and in CI.
+# ------------------------------------------------------------------ #
+
+# ---- Dependencies ----
+node_modules/
+.pnp/
+.pnp.js
+.yarn/
+
+# ---- Next.js build output ----
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+
+# ---- TypeScript / bundler caches ----
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+.turbo/
+.swc/
+
+# ---- Test & coverage output ----
+coverage/
+playwright-report/
+playwright/.cache/
+test-results/
+blob-report/
+.vitest/
+
+# ---- Environment ----
+# Every .env variant is secret except the checked-in templates.
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+
+# ---- OS noise ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Editors ----
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+
+# ---- Local runtime scratch ----
+*.pid
+*.seed
+*.pid.lock
+.cache/
+tmp/
+.local/
+
+# ---- Docker local volumes (when bind-mounted instead of named) ----
+.docker-data/
+
+# ---- Local agent-tool state ----
+.cmaestro/
