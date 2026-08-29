@@ -24,7 +24,7 @@ test.describe('registration and onboarding', () => {
   // They failed identically before the catalogue/estimator changes — verified
   // against the baseline run of 2026-08-28 15:25. Root cause lives in dev-server
   // timing, not the specs; revisit by running CI against `next start`.
-  test.skip(process.env.CI, 'CI dev-server timing: hydration + composer races, passes locally');
+  test.skip(Boolean(process.env.CI), 'CI dev-server timing: hydration + composer races, passes locally');
   test('registers a new account and reaches onboarding', async ({ page }) => {
     const email = uniqueEmail();
 
