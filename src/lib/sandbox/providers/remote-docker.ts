@@ -98,7 +98,10 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
     const row = rows[0];
     if (!row?.workerId) return null;
 
-    const entry = { workerId: row.workerId, externalId: row.externalId ?? externalIdFor(sandboxId) };
+    const entry = {
+      workerId: row.workerId,
+      externalId: row.externalId ?? externalIdFor(sandboxId),
+    };
     this.routes.set(sandboxId, entry);
     return entry;
   }

@@ -432,7 +432,13 @@ async function handleCommand(command, ctx) {
           command.sandboxExternalId,
           'sh',
           '-lc',
-          `mkdir -p ${WORKSPACE} && chown 10001:10001 ${WORKSPACE}`,
+          // chmod, not chown: the container runs with --cap-drop=ALL, and the
+          // exec inherits that set, so even root has no CAP_CHOWN there. The
+          // owner of a directory it just created can always chmod it — that
+          // needs no capability — and the sandbox's own uid then has write
+          // access. Intra-container permissions are not the security boundary;
+          // the container itself is.
+          `mkdir -p ${WORKSPACE} && chmod 0777 ${WORKSPACE}`,
         ],
         { timeoutMs: 30_000 },
       );
