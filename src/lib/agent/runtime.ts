@@ -87,6 +87,22 @@ const MAX_ITERATIONS: Record<RunAgentInput['mode'], number> = {
 export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStreamEvent> {
   const startedAt = Date.now();
 
+  // The upstream model stream hangs off this controller, not directly off the
+  // request signal: the stall watchdog (only) needs to cut a silent provider
+  // connection without pretending the user cancelled the run.
+  const upstreamAbort = new AbortController();
+  input.signal?.addEventListener(
+    'abort',
+    () => upstreamAbort.abort(new Error('The run was stopped.')),
+    { once: true },
+  );
+
+  // One function hosts the entire turn; past the platform duration cap it is
+  // killed with no error ever reaching the browser. End the run deliberately
+  // a little before that, so the user gets an honest "send again to retry"
+  // instead of an eternally spinning cursor.
+  const turnDeadline = startedAt + MAX_TURN_MS;
+
   const context = await loadRunContext(input);
   if ('error' in context) {
     yield errorEvent(context.error.code, context.error.message, context.error.retryable);
@@ -352,16 +368,19 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
 
       let stream: AsyncIterable<CompletionChunk>;
       try {
-        stream = model.provider.stream({
-          modelSlug: model.modelSlug,
-          messages: conversationMessages,
-          tools: tools.length ? tools : undefined,
-          maxOutputTokens: Math.min(model.maxOutputTokens || 8192, 8192),
-          signal: input.signal,
-          apiKey: model.byok?.apiKey,
-          baseUrl: model.byok?.baseUrl,
-          requestId: runId,
-        });
+        stream = withStreamStallGuard(
+          model.provider.stream({
+            modelSlug: model.modelSlug,
+            messages: conversationMessages,
+            tools: tools.length ? tools : undefined,
+            maxOutputTokens: Math.min(model.maxOutputTokens || 8192, 8192),
+            signal: upstreamAbort.signal,
+            apiKey: model.byok?.apiKey,
+            baseUrl: model.byok?.baseUrl,
+            requestId: runId,
+          }),
+          (reason) => upstreamAbort.abort(new Error(reason)),
+        );
       } catch (error) {
         yield* handleProviderFailure(error);
         runStatus = 'failed';
@@ -380,6 +399,18 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
           if (input.signal?.aborted) {
             runStatus = 'cancelled';
             finishReason = 'stopped_by_user';
+            break;
+          }
+
+          if (Date.now() > turnDeadline) {
+            upstreamAbort.abort(new Error('Turn deadline reached.'));
+            yield errorEvent(
+              'internal',
+              'This turn reached its time limit and was stopped cleanly. Nothing was lost — send a follow-up message to continue where it left off.',
+              true,
+            );
+            runStatus = 'failed';
+            finishReason = 'turn_deadline';
             break;
           }
 
@@ -1076,6 +1107,54 @@ function errorEvent(
   retryable: boolean,
 ): AgentStreamEvent {
   return { type: 'error', code, message, retryable };
+}
+
+/**
+ * Cutting an agent turn off on purpose, before the platform does it silently.
+ */
+const MAX_TURN_MS = 280_000;
+
+/** Silence longer than this means the provider stream is dead, not thinking. */
+const STREAM_STALL_MS = 90_000;
+
+/**
+ * Guards a model stream against a silent upstream: a provider that accepts the
+ * connection and then never sends another byte would otherwise park the turn
+ * forever — the function lives, the SSE never closes, the cursor blinks on.
+ * Any chunk resets the timer; `stallMs` of nothing aborts the upstream
+ * connection and surfaces a retryable error the model loop turns into a clean
+ * "send again" for the user.
+ */
+async function* withStreamStallGuard(
+  stream: AsyncIterable<CompletionChunk>,
+  abort: (reason: string) => void,
+  stallMs = STREAM_STALL_MS,
+): AsyncGenerator<CompletionChunk> {
+  const iterator = stream[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let result: IteratorResult<CompletionChunk>;
+      try {
+        result = await Promise.race([
+          iterator.next(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('stream stalled')), stallMs);
+          }),
+        ]);
+      } catch {
+        const reason = `The model stream went silent for ${Math.round(stallMs / 1000)} seconds and was cut off. This is usually a temporary provider hiccup — send the message again to retry.`;
+        abort(reason);
+        throw new Error(reason);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (result.done) return;
+      yield result.value;
+    }
+  } finally {
+    await iterator.return?.();
+  }
 }
 
 function* handleProviderFailure(error: unknown): Generator<AgentStreamEvent> {

@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, lt, and } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { requireConversationAccess } from '@/app/api/_shared/conversation-access';
@@ -38,6 +38,23 @@ export const dynamic = 'force-dynamic';
 export const GET = defineHandler({ auth: 'required' }, async ({ params }) => {
   const conversationId = routeParam(params, 'conversationId');
   const access = await requireConversationAccess(conversationId, 'project.read');
+
+  // A turn can only be streaming while its serverless function is alive, and
+  // no function lives this long — a message still marked `streaming` after ten
+  // minutes means the function died mid-stream (duration cap, deploy, crash).
+  // Reconcile it here, or the transcript renders a phantom that is forever
+  // "typing" on every page load.
+  const staleStreamingCutoff = new Date(Date.now() - 10 * 60_000);
+  await db
+    .update(messages)
+    .set({ status: 'failed', updatedAt: new Date() })
+    .where(
+      and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.status, 'streaming'),
+        lt(messages.updatedAt, staleStreamingCutoff),
+      ),
+    );
 
   const rows = await db
     .select({ message: messages, modelSlug: models.slug, modelName: models.displayName })
