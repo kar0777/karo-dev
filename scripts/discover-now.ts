@@ -14,7 +14,7 @@ import postgres from 'postgres';
 
 import { syncProviderCatalogs, type ByokCredential } from '@/lib/ai/catalog-sync';
 import { decryptSecret } from '@/lib/crypto/secrets';
-import { MODEL_PRICE_SEEDS } from '@/lib/db/seed-data/models';
+import { MODEL_PRICE_SEEDS, type ModelPriceSeed } from '@/lib/db/seed-data/models';
 
 const url = process.env.DATABASE_URL;
 const encryptionKey = process.env.ENCRYPTION_KEY;
@@ -33,20 +33,92 @@ const ALIAS_DENYLIST = new Set([
   'kimi-k2.5-anthropic',
 ]);
 
-/** Tariffs for arrivals whose provider publishes no prices. */
-const KNOWN_PRICES: Record<string, { in: number; out: number; cached: number; write: number }> = {
-  'kimi-k3-anthropic': { in: 3_000_000, out: 15_000_000, cached: 300_000, write: 3_750_000 },
-  'kimi-k3': { in: 3_000_000, out: 15_000_000, cached: 300_000, write: 3_750_000 },
-  'kimi-k2.6-anthropic': { in: 650_000, out: 3_410_000, cached: 650_000, write: 650_000 },
-  'kimi-k2.6': { in: 650_000, out: 3_410_000, cached: 650_000, write: 650_000 },
-  'zai-org/GLM-5.3': { in: 900_000, out: 2_800_000, cached: 900_000, write: 900_000 },
-  'zai-org/GLM-5.3-Flash': { in: 100_000, out: 400_000, cached: 100_000, write: 100_000 },
-  'glm-5.3': { in: 1_120_000, out: 3_520_000, cached: 112_000, write: 1_400_000 },
-  'tencent/HY4-Preview': { in: 700_000, out: 2_800_000, cached: 700_000, write: 700_000 },
-  'Qwen/Qwen3.8-Max': { in: 1_100_000, out: 4_400_000, cached: 1_100_000, write: 1_100_000 },
-  'Qwen/Qwen3.8-Flash': { in: 30_000, out: 130_000, cached: 30_000, write: 30_000 },
-  'Qwen/Qwen3.8-Flash-Next': { in: 30_000, out: 130_000, cached: 30_000, write: 30_000 },
-  'Qwen/Qwen3.8-27B': { in: 150_000, out: 600_000, cached: 150_000, write: 150_000 },
+/** Tariffs for arrivals whose provider publishes no prices. Same shape as seeds. */
+const KNOWN_PRICES: Record<string, ModelPriceSeed> = {
+  'kimi-k3-anthropic': {
+    inputMicroUsdPerMtok: 3_000_000,
+    outputMicroUsdPerMtok: 15_000_000,
+    cachedInputMicroUsdPerMtok: 300_000,
+    cacheWriteMicroUsdPerMtok: 3_750_000,
+    source: 'catalog-sync-price',
+  },
+  'kimi-k3': {
+    inputMicroUsdPerMtok: 3_000_000,
+    outputMicroUsdPerMtok: 15_000_000,
+    cachedInputMicroUsdPerMtok: 300_000,
+    cacheWriteMicroUsdPerMtok: 3_750_000,
+    source: 'catalog-sync-price',
+  },
+  'kimi-k2.6-anthropic': {
+    inputMicroUsdPerMtok: 650_000,
+    outputMicroUsdPerMtok: 3_410_000,
+    cachedInputMicroUsdPerMtok: 650_000,
+    cacheWriteMicroUsdPerMtok: 650_000,
+    source: 'catalog-sync-price',
+  },
+  'kimi-k2.6': {
+    inputMicroUsdPerMtok: 650_000,
+    outputMicroUsdPerMtok: 3_410_000,
+    cachedInputMicroUsdPerMtok: 650_000,
+    cacheWriteMicroUsdPerMtok: 650_000,
+    source: 'catalog-sync-price',
+  },
+  'zai-org/GLM-5.3': {
+    inputMicroUsdPerMtok: 900_000,
+    outputMicroUsdPerMtok: 2_800_000,
+    cachedInputMicroUsdPerMtok: 900_000,
+    cacheWriteMicroUsdPerMtok: 900_000,
+    source: 'catalog-sync-price',
+  },
+  'zai-org/GLM-5.3-Flash': {
+    inputMicroUsdPerMtok: 100_000,
+    outputMicroUsdPerMtok: 400_000,
+    cachedInputMicroUsdPerMtok: 100_000,
+    cacheWriteMicroUsdPerMtok: 100_000,
+    source: 'catalog-sync-price',
+  },
+  'glm-5.3': {
+    inputMicroUsdPerMtok: 1_120_000,
+    outputMicroUsdPerMtok: 3_520_000,
+    cachedInputMicroUsdPerMtok: 112_000,
+    cacheWriteMicroUsdPerMtok: 1_400_000,
+    source: 'catalog-sync-price',
+  },
+  'tencent/HY4-Preview': {
+    inputMicroUsdPerMtok: 700_000,
+    outputMicroUsdPerMtok: 2_800_000,
+    cachedInputMicroUsdPerMtok: 700_000,
+    cacheWriteMicroUsdPerMtok: 700_000,
+    source: 'catalog-sync-price',
+  },
+  'Qwen/Qwen3.8-Max': {
+    inputMicroUsdPerMtok: 1_100_000,
+    outputMicroUsdPerMtok: 4_400_000,
+    cachedInputMicroUsdPerMtok: 1_100_000,
+    cacheWriteMicroUsdPerMtok: 1_100_000,
+    source: 'catalog-sync-price',
+  },
+  'Qwen/Qwen3.8-Flash': {
+    inputMicroUsdPerMtok: 30_000,
+    outputMicroUsdPerMtok: 130_000,
+    cachedInputMicroUsdPerMtok: 30_000,
+    cacheWriteMicroUsdPerMtok: 30_000,
+    source: 'catalog-sync-price',
+  },
+  'Qwen/Qwen3.8-Flash-Next': {
+    inputMicroUsdPerMtok: 30_000,
+    outputMicroUsdPerMtok: 130_000,
+    cachedInputMicroUsdPerMtok: 30_000,
+    cacheWriteMicroUsdPerMtok: 30_000,
+    source: 'catalog-sync-price',
+  },
+  'Qwen/Qwen3.8-27B': {
+    inputMicroUsdPerMtok: 150_000,
+    outputMicroUsdPerMtok: 600_000,
+    cachedInputMicroUsdPerMtok: 150_000,
+    cacheWriteMicroUsdPerMtok: 150_000,
+    source: 'catalog-sync-price',
+  },
 };
 
 async function main() {
@@ -89,15 +161,14 @@ async function main() {
   let priced = 0;
   for (const change of added) {
     if (ALIAS_DENYLIST.has(change.slug)) continue;
-    const known = KNOWN_PRICES[change.slug];
-    const seeded = MODEL_PRICE_SEEDS[change.slug];
-    const tariff = known ?? seeded;
+    const tariff: ModelPriceSeed | undefined =
+      KNOWN_PRICES[change.slug] ?? MODEL_PRICE_SEEDS[change.slug];
     if (!tariff) continue;
     const prices = {
-      inputMicroUsdPerMtok: tariff.in ?? tariff.inputMicroUsdPerMtok,
-      outputMicroUsdPerMtok: tariff.out ?? tariff.outputMicroUsdPerMtok,
-      cachedInputMicroUsdPerMtok: tariff.cached ?? tariff.cachedInputMicroUsdPerMtok,
-      cacheWriteMicroUsdPerMtok: tariff.write ?? tariff.cacheWriteMicroUsdPerMtok,
+      inputMicroUsdPerMtok: tariff.inputMicroUsdPerMtok,
+      outputMicroUsdPerMtok: tariff.outputMicroUsdPerMtok,
+      cachedInputMicroUsdPerMtok: tariff.cachedInputMicroUsdPerMtok,
+      cacheWriteMicroUsdPerMtok: tariff.cacheWriteMicroUsdPerMtok,
     };
     await client`
       update model_prices set
