@@ -135,7 +135,12 @@ export const POST = defineHandler(
     setAudit({
       resourceId: modelId,
       summary: `Added model "${body.displayName}" (${body.slug}) to ${provider.name}${enabled ? '' : ', disabled until priced'}`,
-      metadata: { providerKey: provider.key, slug: body.slug, priced: Boolean(prices), actorId: user.id },
+      metadata: {
+        providerKey: provider.key,
+        slug: body.slug,
+        priced: Boolean(prices),
+        actorId: user.id,
+      },
     });
 
     const [created] = await db.select().from(models).where(eq(models.id, modelId)).limit(1);

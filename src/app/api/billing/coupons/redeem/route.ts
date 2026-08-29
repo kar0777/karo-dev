@@ -63,7 +63,11 @@ export const POST = defineHandler(
     setAudit({
       teamId: team.id,
       summary: `Redeemed ${outcome.code}: ${outcome.percentOff}% off the ${outcome.planTier} plan`,
-      metadata: { code: outcome.code, percentOff: outcome.percentOff, planTier: outcome.planTier },
+      metadata: {
+        code: outcome.code,
+        percentOff: outcome.percentOff,
+        planTier: outcome.planTier,
+      },
     });
     return json({
       ok: true,

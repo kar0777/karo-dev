@@ -176,7 +176,12 @@ export function ModelsTable({ models }: { models: AdminModelRow[] }) {
           Sync from provider
         </Button>
 
-        <Button size="sm" variant="secondary" iconLeft={<Plus />} onClick={() => setAdding(true)}>
+        <Button
+          size="sm"
+          variant="secondary"
+          iconLeft={<Plus />}
+          onClick={() => setAdding(true)}
+        >
           Add model
         </Button>
       </div>
@@ -691,7 +696,10 @@ function AddModelSheet({ open, onClose }: { open: boolean; onClose: () => void }
       .then((result) => {
         if (!cancelled) {
           setProviders(result.providers);
-          setForm((current) => ({ ...current, providerKey: current.providerKey || result.providers[0]?.key || '' }));
+          setForm((current) => ({
+            ...current,
+            providerKey: current.providerKey || result.providers[0]?.key || '',
+          }));
         }
       })
       .catch((caught) => {
@@ -732,7 +740,13 @@ function AddModelSheet({ open, onClose }: { open: boolean; onClose: () => void }
       toast.success('Model added', {
         description: priced ? form.displayName : `${form.displayName} — disabled until priced.`,
       });
-      setForm((current) => ({ ...current, slug: '', displayName: '', inputPrice: '', outputPrice: '' }));
+      setForm((current) => ({
+        ...current,
+        slug: '',
+        displayName: '',
+        inputPrice: '',
+        outputPrice: '',
+      }));
       onClose();
       router.refresh();
     } catch (caught) {

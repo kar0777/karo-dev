@@ -248,7 +248,9 @@ export function PlanPicker({
                   }
                   onClick={() => void choose(plan)}
                   loading={busy}
-                  disabled={!canManage || isCurrentExact || pendingKey !== null || plan.comingSoon}
+                  disabled={
+                    !canManage || isCurrentExact || pendingKey !== null || plan.comingSoon
+                  }
                 >
                   {isCurrentExact ? (
                     'Your plan'

@@ -86,7 +86,6 @@ export const POST = defineHandler(
       );
     }
 
-
     await recordAudit({
       action: AUDIT_ACTIONS.workerRegister,
       teamId: worker.teamId,

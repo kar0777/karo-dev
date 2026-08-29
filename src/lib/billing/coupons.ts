@@ -3,13 +3,7 @@ import 'server-only';
 import { and, count, eq, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
-import {
-  couponRedemptions,
-  coupons,
-  paygBalances,
-  topups,
-  type Coupon,
-} from '@/lib/db/schema';
+import { couponRedemptions, coupons, paygBalances, topups, type Coupon } from '@/lib/db/schema';
 import { ID_PREFIX, newId } from '@/lib/ids';
 
 /**
@@ -131,7 +125,11 @@ export async function redeemCoupon(input: {
     if (coupon.kind === 'credit') {
       const amount = coupon.amountMicroUsd ?? 0;
       if (amount <= 0) {
-        return { ok: false, title: 'Broken code', reason: 'This credit code has no amount set.' };
+        return {
+          ok: false,
+          title: 'Broken code',
+          reason: 'This credit code has no amount set.',
+        };
       }
 
       // Bonus balance, not topped-up cash: `bonus_micro_usd` carries the value
@@ -234,9 +232,8 @@ export async function redeemCoupon(input: {
 export function generateCouponCode(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const group = (length: number) =>
-    Array.from(
-      { length },
-      () => alphabet[Math.floor(Math.random() * alphabet.length)],
-    ).join('');
+    Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join(
+      '',
+    );
   return `KARO-${group(4)}-${group(4)}`;
 }

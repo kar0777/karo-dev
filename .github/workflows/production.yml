@@ -40,11 +40,11 @@ concurrency:
 permissions:
   contents: read
 
+# The `secrets` context is NOT valid at the top level — a workflow that
+# references it here is rejected wholesale at parse time (every run fails in
+# 0s with no jobs). Each job reads its own secrets at job level instead.
 env:
   NODE_VERSION: '24'
-  KARO_DATABASE_URL: ${{ secrets.KARO_DATABASE_URL }}
-  KARO_BASE_URL: ${{ secrets.KARO_BASE_URL }}
-  KARO_CRON_SECRET: ${{ secrets.KARO_CRON_SECRET }}
 
 jobs:
   # ---------------------------------------------------------------- #
@@ -53,8 +53,10 @@ jobs:
   migrate:
     name: Migrate database
     runs-on: ubuntu-latest
-    if: ${{ env.KARO_DATABASE_URL != '' }}
+    if: ${{ secrets.KARO_DATABASE_URL != '' }}
     timeout-minutes: 10
+    env:
+      KARO_DATABASE_URL: ${{ secrets.KARO_DATABASE_URL }}
 
     steps:
       - uses: actions/checkout@v5
@@ -78,7 +80,7 @@ jobs:
   migrate-skipped:
     name: Migrate database (no secret — skipped)
     runs-on: ubuntu-latest
-    if: ${{ env.KARO_DATABASE_URL == '' }}
+    if: ${{ secrets.KARO_DATABASE_URL == '' }}
     steps:
       - name: Explain
         run: echo "KARO_DATABASE_URL is not set — see DEPLOY.md, step 4."
@@ -90,8 +92,11 @@ jobs:
   tick:
     name: Maintenance tick
     runs-on: ubuntu-latest
-    if: ${{ env.KARO_BASE_URL != '' && env.KARO_CRON_SECRET != '' }}
+    if: ${{ secrets.KARO_BASE_URL != '' && secrets.KARO_CRON_SECRET != '' }}
     timeout-minutes: 5
+    env:
+      KARO_BASE_URL: ${{ secrets.KARO_BASE_URL }}
+      KARO_CRON_SECRET: ${{ secrets.KARO_CRON_SECRET }}
 
     steps:
       - name: Ping /api/cron/tick
@@ -103,7 +108,7 @@ jobs:
   tick-skipped:
     name: Maintenance tick (no secrets — skipped)
     runs-on: ubuntu-latest
-    if: ${{ env.KARO_BASE_URL == '' || env.KARO_CRON_SECRET == '' }}
+    if: ${{ secrets.KARO_BASE_URL == '' || secrets.KARO_CRON_SECRET == '' }}
     steps:
       - name: Explain
         run: echo "KARO_BASE_URL / KARO_CRON_SECRET are not set — see DEPLOY.md, step 5."

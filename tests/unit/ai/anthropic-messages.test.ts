@@ -14,7 +14,10 @@ import type { ChatMessage, CompletionRequest } from '@/lib/ai/types';
  * alternate, and usage buckets are additive rather than a subset of a total.
  */
 
-function request(messages: ChatMessage[], extra: Partial<CompletionRequest> = {}): CompletionRequest {
+function request(
+  messages: ChatMessage[],
+  extra: Partial<CompletionRequest> = {},
+): CompletionRequest {
   return {
     modelSlug: 'kimi-k3-anthropic',
     messages,
@@ -84,7 +87,9 @@ describe('toAnthropicRequest', () => {
   });
 
   it('bounds temperature at 1 and always sends a required max_tokens', () => {
-    const body = toAnthropicRequest(request([{ role: 'user', content: 'Hi' }], { temperature: 1.7 }));
+    const body = toAnthropicRequest(
+      request([{ role: 'user', content: 'Hi' }], { temperature: 1.7 }),
+    );
     expect(body.temperature).toBe(1);
     expect(body.max_tokens).toBe(8192);
   });
@@ -131,11 +136,17 @@ describe('parseAnthropicStream', () => {
         },
         {
           event: 'content_block_delta',
-          data: JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'He' } }),
+          data: JSON.stringify({
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'He' },
+          }),
         },
         {
           event: 'content_block_delta',
-          data: JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'y' } }),
+          data: JSON.stringify({
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'y' },
+          }),
         },
         {
           event: 'content_block_stop',
@@ -223,7 +234,10 @@ describe('parseAnthropicStream', () => {
   it('maps max_tokens to the length finish reason', async () => {
     const chunks = await collect(
       sse([
-        { event: 'message_start', data: '{"type":"message_start","message":{"usage":{"input_tokens":5}}}' },
+        {
+          event: 'message_start',
+          data: '{"type":"message_start","message":{"usage":{"input_tokens":5}}}',
+        },
         {
           event: 'message_delta',
           data: '{"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":9}}',

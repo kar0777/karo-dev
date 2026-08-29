@@ -134,7 +134,10 @@ export class AnthropicMessagesProvider implements ModelProvider {
       body: JSON.stringify(toAnthropicRequest(request)),
       signal: request.signal,
     }).catch((error: unknown) => {
-      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.name === 'TimeoutError')
+      ) {
         throw new ProviderError('cancelled', 'Request cancelled.', { status: 499 });
       }
       throw new ProviderError('unavailable', 'Could not reach the model provider.', {
@@ -248,7 +251,11 @@ type AnthropicBlock =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
-  | { type: 'tool_result'; tool_use_id: string; content: Array<{ type: 'text'; text: string }> };
+  | {
+      type: 'tool_result';
+      tool_use_id: string;
+      content: Array<{ type: 'text'; text: string }>;
+    };
 
 type AnthropicTurn = { role: 'user' | 'assistant'; content: AnthropicBlock[] };
 
@@ -275,9 +282,10 @@ export function toAnthropicRequest(request: CompletionRequest): Record<string, u
         break;
 
       case 'user': {
-        const blocks = typeof message.content === 'string'
-          ? [textBlock(message.content)]
-          : message.content.map(contentPartToBlock);
+        const blocks =
+          typeof message.content === 'string'
+            ? [textBlock(message.content)]
+            : message.content.map(contentPartToBlock);
         turns.push({ role: 'user', content: blocks });
         break;
       }

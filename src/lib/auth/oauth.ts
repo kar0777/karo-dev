@@ -106,7 +106,10 @@ const GITHUB: ProviderConfig = {
     };
     const [profileResponse, emailsResponse] = await Promise.all([
       fetch('https://api.github.com/user', { headers, signal: AbortSignal.timeout(15_000) }),
-      fetch('https://api.github.com/user/emails', { headers, signal: AbortSignal.timeout(15_000) }),
+      fetch('https://api.github.com/user/emails', {
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      }),
     ]);
     if (!profileResponse.ok) throw new Error('GitHub profile request failed.');
     const profile = (await profileResponse.json()) as {
@@ -227,9 +230,7 @@ export function oauthStateValue(nextPath: string): string {
   return `${Buffer.from(payload).toString('base64url')}.${mac}`;
 }
 
-export function readOAuthState(
-  value: string | undefined,
-): { nextPath: string } | null {
+export function readOAuthState(value: string | undefined): { nextPath: string } | null {
   if (!value) return null;
   const [encoded, mac] = value.split('.');
   if (!encoded || !mac) return null;

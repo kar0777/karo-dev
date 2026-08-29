@@ -123,13 +123,21 @@ describe('coupon redemption against a real database', () => {
     expect(balance?.lifetimeToppedUpMicroUsd).toBe(0);
 
     const [topup] = await db.select().from(topups).where(eq(topups.teamId, ids.team));
-    expect(topup).toMatchObject({ bonusMicroUsd: 5_000_000, amountMicroUsd: 0, provider: 'coupon' });
+    expect(topup).toMatchObject({
+      bonusMicroUsd: 5_000_000,
+      amountMicroUsd: 0,
+      provider: 'coupon',
+    });
   });
 
   it('refuses a second redemption from the same workspace (per-team cap)', async () => {
     await mint({ code: 'FIXTEAM1', kind: 'credit', amountMicroUsd: 1_000_000, maxPerTeam: 1 });
 
-    const first = await redeemCoupon({ teamId: ids.team, userId: ids.user, rawCode: 'FIXTEAM1' });
+    const first = await redeemCoupon({
+      teamId: ids.team,
+      userId: ids.user,
+      rawCode: 'FIXTEAM1',
+    });
     expect(first.ok).toBe(true);
 
     const second = await redeemCoupon({
@@ -141,9 +149,18 @@ describe('coupon redemption against a real database', () => {
   });
 
   it('stops at the global activation limit across workspaces', async () => {
-    await mint({ code: 'FIXGLOB1', kind: 'credit', amountMicroUsd: 1_000_000, maxRedemptions: 1 });
+    await mint({
+      code: 'FIXGLOB1',
+      kind: 'credit',
+      amountMicroUsd: 1_000_000,
+      maxRedemptions: 1,
+    });
 
-    const first = await redeemCoupon({ teamId: ids.team, userId: ids.user, rawCode: 'FIXGLOB1' });
+    const first = await redeemCoupon({
+      teamId: ids.team,
+      userId: ids.user,
+      rawCode: 'FIXGLOB1',
+    });
     expect(first.ok).toBe(true);
 
     const second = await redeemCoupon({
@@ -162,7 +179,11 @@ describe('coupon redemption against a real database', () => {
       planTier: 'lite',
     });
 
-    const first = await redeemCoupon({ teamId: ids.team, userId: ids.user, rawCode: 'FIXDISC1' });
+    const first = await redeemCoupon({
+      teamId: ids.team,
+      userId: ids.user,
+      rawCode: 'FIXDISC1',
+    });
     expect(first).toMatchObject({ ok: true, kind: 'plan_discount', percentOff: 50 });
 
     const rows = await db
@@ -177,7 +198,11 @@ describe('coupon redemption against a real database', () => {
       percentOff: 30,
       planTier: 'lite',
     });
-    const second = await redeemCoupon({ teamId: ids.team, userId: ids.user, rawCode: 'FIXDISC2' });
+    const second = await redeemCoupon({
+      teamId: ids.team,
+      userId: ids.user,
+      rawCode: 'FIXDISC2',
+    });
     expect(second).toMatchObject({ ok: false, title: 'Discount already active' });
     await db.delete(coupons).where(eq(coupons.id, other));
   });
@@ -190,7 +215,11 @@ describe('coupon redemption against a real database', () => {
       expiresAt: new Date(Date.now() - 60_000),
     });
 
-    const outcome = await redeemCoupon({ teamId: ids.team, userId: ids.user, rawCode: 'FIXEXPD1' });
+    const outcome = await redeemCoupon({
+      teamId: ids.team,
+      userId: ids.user,
+      rawCode: 'FIXEXPD1',
+    });
     expect(outcome).toMatchObject({ ok: false, title: 'Code expired' });
   });
 });

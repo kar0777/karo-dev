@@ -423,7 +423,9 @@ function PromoCode({ canManage }: { canManage: boolean }) {
           {message.text}
         </p>
       ) : (
-        <FieldHint>Codes are applied here in Billing — bonus credit or a plan discount.</FieldHint>
+        <FieldHint>
+          Codes are applied here in Billing — bonus credit or a plan discount.
+        </FieldHint>
       )}
     </div>
   );

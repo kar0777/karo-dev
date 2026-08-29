@@ -40,10 +40,13 @@ const createSchema = z
     message: 'A credit coupon needs an amount in dollars.',
     path: ['amountUsd'],
   })
-  .refine((body) => body.kind !== 'plan_discount' || Boolean(body.percentOff && body.planTier), {
-    message: 'A discount coupon needs a percentage and a plan.',
-    path: ['percentOff'],
-  });
+  .refine(
+    (body) => body.kind !== 'plan_discount' || Boolean(body.percentOff && body.planTier),
+    {
+      message: 'A discount coupon needs a percentage and a plan.',
+      path: ['percentOff'],
+    },
+  );
 
 export const GET = defineHandler({ auth: 'required', rateLimit: 'api.default' }, async () => {
   await requireApiPlatformAdmin();
@@ -70,7 +73,11 @@ export const POST = defineHandler(
     await requireApiPlatformAdmin();
 
     const code = (body.code?.trim() || generateCouponCode()).toUpperCase();
-    const clash = await db.select({ id: coupons.id }).from(coupons).where(eq(coupons.code, code)).limit(1);
+    const clash = await db
+      .select({ id: coupons.id })
+      .from(coupons)
+      .where(eq(coupons.code, code))
+      .limit(1);
     if (clash.length > 0) {
       throw new ValidationError(`Code "${code}" already exists.`, undefined, {
         title: 'Code taken',

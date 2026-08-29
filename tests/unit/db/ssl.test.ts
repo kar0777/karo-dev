@@ -9,9 +9,9 @@ import { databaseSsl } from '@/lib/db/ssl';
  */
 describe('databaseSsl', () => {
   it('upgrades a managed host pasted without a query string to TLS', () => {
-    expect(databaseSsl('postgresql://user:pass@ep-x-pooler.c-4.us-east-2.aws.neon.tech/neondb')).toBe(
-      'require',
-    );
+    expect(
+      databaseSsl('postgresql://user:pass@ep-x-pooler.c-4.us-east-2.aws.neon.tech/neondb'),
+    ).toBe('require');
   });
 
   it('keeps localhost plaintext', () => {
@@ -27,9 +27,9 @@ describe('databaseSsl', () => {
   });
 
   it('respects an explicit sslmode in the URL', () => {
-    expect(
-      databaseSsl('postgresql://user:pass@neon.example/neondb?sslmode=require'),
-    ).toBe('require');
+    expect(databaseSsl('postgresql://user:pass@neon.example/neondb?sslmode=require')).toBe(
+      'require',
+    );
     expect(
       databaseSsl('postgresql://user:pass@neon.example/neondb?sslmode=disable'),
     ).toBeUndefined();

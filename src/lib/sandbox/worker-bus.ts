@@ -161,7 +161,11 @@ export async function dispatch(
     await sleep(Math.min(QUEUE_CHECK_INTERVAL_MS, Math.max(deadline - Date.now(), 0)));
 
     const rows = await db
-      .select({ status: byosCommands.status, result: byosCommands.result, error: byosCommands.error })
+      .select({
+        status: byosCommands.status,
+        result: byosCommands.result,
+        error: byosCommands.error,
+      })
       .from(byosCommands)
       .where(eq(byosCommands.id, id))
       .limit(1);
@@ -175,7 +179,9 @@ export async function dispatch(
         commandId: id,
         ok: row.status === 'completed',
         data: result.data,
-        error: result.error ?? (row.status === 'failed' ? row.error ?? 'Command failed.' : undefined),
+        error:
+          result.error ??
+          (row.status === 'failed' ? (row.error ?? 'Command failed.') : undefined),
       };
     }
   }
@@ -205,7 +211,11 @@ export function dispatchNoWait(workerId: string, command: WorkerCommandInput): v
       timeoutAt: new Date(Date.now() + 60_000),
     })
     .catch((error: unknown) => {
-      log.warn('Could not queue a worker command', { workerId, kind: full.kind, error: String(error) });
+      log.warn('Could not queue a worker command', {
+        workerId,
+        kind: full.kind,
+        error: String(error),
+      });
     });
 }
 
@@ -352,7 +362,12 @@ export async function workerStats(workerId: string) {
   const queued = await db
     .select({ status: byosCommands.status, count: sql<number>`count(*)::int` })
     .from(byosCommands)
-    .where(and(eq(byosCommands.workerId, workerId), inArray(byosCommands.status, ['queued', 'claimed'])))
+    .where(
+      and(
+        eq(byosCommands.workerId, workerId),
+        inArray(byosCommands.status, ['queued', 'claimed']),
+      ),
+    )
     .groupBy(byosCommands.status);
 
   const sum = queued.reduce((total, row) => total + Number(row.count), 0);
@@ -372,7 +387,12 @@ export async function drainWorker(workerId: string, reason: string): Promise<voi
   await db
     .update(byosCommands)
     .set({ status: 'failed', error: reason, completedAt: new Date() })
-    .where(and(eq(byosCommands.workerId, workerId), inArray(byosCommands.status, ['queued', 'claimed'])));
+    .where(
+      and(
+        eq(byosCommands.workerId, workerId),
+        inArray(byosCommands.status, ['queued', 'claimed']),
+      ),
+    );
 }
 
 function sleep(ms: number): Promise<void> {

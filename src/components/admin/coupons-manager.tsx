@@ -111,7 +111,9 @@ export function CouponsManager({ coupons }: { coupons: AdminCoupon[] }) {
         method: 'PATCH',
         json: { isActive: !coupon.isActive },
       });
-      toast.success(coupon.isActive ? `Coupon ${coupon.code} retired` : `Coupon ${coupon.code} re-armed`);
+      toast.success(
+        coupon.isActive ? `Coupon ${coupon.code} retired` : `Coupon ${coupon.code} re-armed`,
+      );
       router.refresh();
     } catch (caught) {
       const described = describeError(caught);

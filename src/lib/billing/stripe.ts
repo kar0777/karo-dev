@@ -208,7 +208,10 @@ export class StripeBillingProvider implements BillingProvider {
     } catch (error) {
       // `resource_already_exists` is the expected path on every checkout after
       // the first; anything else is a real failure.
-      if (!(error instanceof Stripe.errors.StripeError) || error.code !== 'resource_already_exists') {
+      if (
+        !(error instanceof Stripe.errors.StripeError) ||
+        error.code !== 'resource_already_exists'
+      ) {
         throw error;
       }
     }

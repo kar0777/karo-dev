@@ -101,7 +101,9 @@ export function OAuthButtons({
         })}
       </div>
       {enabled.length === 0 ? (
-        <p className="mt-2 text-center text-[11px] leading-relaxed text-subtle">{UNAVAILABLE}</p>
+        <p className="mt-2 text-center text-[11px] leading-relaxed text-subtle">
+          {UNAVAILABLE}
+        </p>
       ) : null}
     </div>
   );
