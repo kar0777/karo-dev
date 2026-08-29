@@ -99,8 +99,17 @@ export function buildInstallCommand(
     return `curl -fsSL ${mirrored} | sh -s -- --token ${installToken} --url ${appUrl}`;
   }
 
+  // The agent runs detached (nohup + log file + a follow-up `tail` so the paste
+  // still shows the worker coming up). A foreground command ties the agent to
+  // the SSH session that installed it: close the laptop's terminal and the
+  // "server" the user just connected silently dies. The agent already retries
+  // network failures on its own, so plain nohup is enough — no global npm
+  // installs (which need root) and no systemd unit (which needs root too).
+  // The PowerShell path stays foreground on purpose: a hidden Windows process
+  // would have no visible log and no sane way to stop it.
   return [
     `curl -fsSL ${appUrl}/api/worker/install -o karo-worker.mjs`,
-    `node karo-worker.mjs --token ${installToken} --url ${appUrl}`,
-  ].join(' && \\\n  ');
+    `nohup node karo-worker.mjs --token ${installToken} --url ${appUrl} > karo-worker.log 2>&1 &`,
+    'sleep 2 && tail -n 5 karo-worker.log',
+  ].join('\n');
 }

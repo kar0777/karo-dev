@@ -667,8 +667,8 @@ function TokenDialog({ issued, onClose }: { issued: IssuedToken | null; onClose:
               : `${issued.workerName} is ready to connect`}
           </DialogTitle>
           <DialogDescription>
-            Run this on the machine. It installs the worker agent, registers it and starts the
-            service.
+            Run this on the machine. It downloads the agent, registers it and starts it detached
+            — the agent keeps running after you close the terminal.
           </DialogDescription>
         </DialogHeader>
 
@@ -706,7 +706,11 @@ function TokenDialog({ issued, onClose }: { issued: IssuedToken | null; onClose:
             The machine — Linux, macOS with Docker Desktop, or Windows 10/11 with Docker Desktop
             and Node — needs outbound HTTPS to Karo. It does{' '}
             <span className="font-medium text-fg">not</span> need a public IP, an open port, or
-            any inbound access at all.
+            any inbound access at all. On Linux the agent runs detached: its log lands in{' '}
+            <code className="font-mono text-[11.5px] text-fg">karo-worker.log</code> next to the
+            agent, and{' '}
+            <code className="font-mono text-[11.5px] text-fg">pkill -f karo-worker.mjs</code>{' '}
+            stops it.
           </p>
 
           <label className="flex items-start gap-2 text-[13px] text-fg">
