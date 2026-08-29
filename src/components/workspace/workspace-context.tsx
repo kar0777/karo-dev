@@ -192,6 +192,15 @@ type WorkspaceContextValue = {
 
 const WorkspaceContext = React.createContext<WorkspaceContextValue | null>(null);
 
+/** Sandbox states that change on the server and belong on screen without a reload. */
+const POLLABLE_SANDBOX_STATUSES: WorkspaceSandbox['status'][] = [
+  'running',
+  'creating',
+  'starting',
+  'sleeping',
+  'stopping',
+];
+
 export function useWorkspace(): WorkspaceContextValue {
   const value = React.useContext(WorkspaceContext);
   if (!value) throw new Error('useWorkspace must be used inside <WorkspaceProvider>.');
@@ -1642,7 +1651,10 @@ export function WorkspaceProvider({
 
   React.useEffect(() => {
     const current = sandbox;
-    if (!current || current.status !== 'running') return;
+    // Polling covers the transient states too — a sandbox left 'creating' or
+    // 'starting' would otherwise sit there until a full page reload, and one
+    // that auto-slept would never show itself as asleep.
+    if (!current || !POLLABLE_SANDBOX_STATUSES.includes(current.status)) return;
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -1656,6 +1668,8 @@ export function WorkspaceProvider({
           memoryLimitMb?: number;
           diskUsedMb?: number;
           processCount?: number;
+          status?: WorkspaceSandbox['status'];
+          message?: string;
         }>(`/api/sandboxes/${current.id}/metrics`);
         if (cancelled) return;
         setSandbox((prev) =>
@@ -1666,6 +1680,8 @@ export function WorkspaceProvider({
                 memoryUsedMb: metrics.memoryUsedMb ?? prev.memoryUsedMb,
                 diskUsedMb: metrics.diskUsedMb ?? prev.diskUsedMb,
                 processCount: metrics.processCount ?? prev.processCount,
+                status: metrics.status ?? prev.status,
+                statusMessage: metrics.message ?? prev.statusMessage,
               }
             : prev,
         );
