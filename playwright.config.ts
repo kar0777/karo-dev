@@ -117,10 +117,13 @@ export default defineConfig({
    */
   webServer: managesServer
     ? {
-        command: 'npm run dev',
+        // CI drives the production build (built by the workflow beforehand):
+        // the dev server's on-demand compilation races the browser on slow
+        // runners and produced hydration re-renders no real deployment has.
+        command: isCI ? 'npm run start' : 'npm run dev',
         url: baseURL,
         reuseExistingServer: !isCI,
-        timeout: 180_000,
+        timeout: 240_000,
         stdout: 'ignore',
         stderr: 'pipe',
         env: {

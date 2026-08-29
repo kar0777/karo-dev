@@ -217,6 +217,14 @@ jobs:
           npm run db:migrate
           npm run db:seed
 
+      # E2E runs against the production server, not `next dev`: the dev
+      # server's lazy compilation and hydration-overlay re-renders race the
+      # browser on slow runners (composer submitting before hydration,
+      # timeouts across the workspace suites) in ways the production build
+      # — the thing actually deployed — does not.
+      - name: Build
+        run: npm run build
+
       - name: Playwright
         run: npm run test:e2e
 
