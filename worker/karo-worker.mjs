@@ -395,6 +395,9 @@ async function handleCommand(command, ctx) {
 
   switch (command.kind) {
     case 'create': {
+      // A stock image needs its workspace directory prepared: the container
+      // runs as an unprivileged uid, and a root-owned /workspace would make
+      // every write fail. Preparing here is what lets any public image work.
       const result = await docker([
         'run',
         '-d',
@@ -408,9 +411,31 @@ async function handleCommand(command, ctx) {
         'sleep',
         'infinity',
       ]);
-      return result.exitCode === 0
-        ? { ok: true, data: { containerId: result.stdout.trim() } }
-        : { ok: false, error: result.stderr || 'docker run failed' };
+      if (result.exitCode !== 0) {
+        return { ok: false, error: result.stderr || 'docker run failed' };
+      }
+
+      const prep = await docker(
+        [
+          'exec',
+          '--user',
+          'root',
+          command.sandboxExternalId,
+          'sh',
+          '-lc',
+          `mkdir -p ${WORKSPACE} && chown 10001:10001 ${WORKSPACE}`,
+        ],
+        { timeoutMs: 30_000 },
+      );
+      if (prep.exitCode !== 0) {
+        await docker(['rm', '-f', command.sandboxExternalId]);
+        return {
+          ok: false,
+          error: prep.stderr || 'could not prepare the workspace directory',
+        };
+      }
+
+      return { ok: true, data: { containerId: result.stdout.trim() } };
     }
 
     case 'start':

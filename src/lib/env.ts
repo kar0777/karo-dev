@@ -107,7 +107,13 @@ const serverSchema = z.object({
     .default('auto'),
   DOCKER_SOCKET: z.string().optional(),
   DOCKER_HOST: z.string().optional(),
-  SANDBOX_IMAGE: z.string().default('karo/sandbox-base:1'),
+  /**
+   * A real, multi-arch public image (bash, git, node) that any Docker host can
+   * pull — the previous default, `karo/sandbox-base:1`, was a name nothing had
+   * ever published, so every BYOS create failed at `docker run`. Override for
+   * a custom image; the worker prepares /workspace itself.
+   */
+  SANDBOX_IMAGE: z.string().default('node:22-bookworm'),
   SANDBOX_NETWORK: z.string().default('karo-sandbox'),
 
   DAYTONA_API_URL: z.string().optional(),

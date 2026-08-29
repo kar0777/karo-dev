@@ -91,23 +91,47 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
 
     const externalId = `karo-${options.sandboxId.slice(-16)}`;
 
-    const result = await dispatch(options.workerId, {
-      kind: 'create',
-      sandboxExternalId: externalId,
-      image: options.image,
-      cpuCores: options.cpuCores,
-      memoryMb: options.memoryMb,
-      diskGb: options.diskGb,
-      maxProcesses: options.maxProcesses,
-      networkPolicy: options.networkPolicy,
-      env: options.env ?? {},
-    });
-
-    if (!result.ok) {
+    // A first create may pull the base image on the worker. The window is
+    // deliberately shorter than the pull itself can take on a slow line: if
+    // the download outlasts it, the caller gets a clear "create again" and
+    // the second attempt finds the image cached on the machine.
+    let result: Awaited<ReturnType<typeof dispatch>>;
+    try {
+      result = await dispatch(
+        options.workerId,
+        {
+          kind: 'create',
+          sandboxExternalId: externalId,
+          image: options.image,
+          cpuCores: options.cpuCores,
+          memoryMb: options.memoryMb,
+          diskGb: options.diskGb,
+          maxProcesses: options.maxProcesses,
+          networkPolicy: options.networkPolicy,
+          env: options.env ?? {},
+        },
+        90_000,
+      );
+    } catch (error) {
       throw new SandboxError(
         'internal',
-        result.error ?? 'The server could not create the sandbox.',
+        'Your server took too long to prepare the sandbox — usually the one-time base image download. Create it again; the second attempt is fast.',
+        { cause: error },
       );
+    }
+
+    if (!result.ok) {
+      // The first create on a machine downloads the base image, which can
+      // outlast this call on a slow line — and Docker's wording for it is
+      // opaque. Say what actually happened and what to do.
+      const detail = result.error ?? 'The server could not create the sandbox.';
+      if (/unable to find image|pull access|manifest unknown|not found/i.test(detail)) {
+        throw new SandboxError(
+          'internal',
+          'The base image could not be pulled on your server. Check its internet access, then create the sandbox again.',
+        );
+      }
+      throw new SandboxError('internal', detail);
     }
 
     this.routes.set(options.sandboxId, { workerId: options.workerId, externalId });
