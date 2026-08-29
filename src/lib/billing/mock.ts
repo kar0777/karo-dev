@@ -2,6 +2,7 @@ import 'server-only';
 
 import { and, eq, sql } from 'drizzle-orm';
 
+import { topupBonusMicroUsd } from './credit';
 import { db } from '@/lib/db';
 import { invoices, paygBalances, plans, subscriptions, teams, topups } from '@/lib/db/schema';
 import { ID_PREFIX, newId } from '@/lib/ids';
@@ -80,12 +81,15 @@ export class MockBillingProvider implements BillingProvider {
       throw new BillingError('invalid_amount', 'Top-up amount must be greater than zero.');
     }
 
+    const bonus = topupBonusMicroUsd(amount);
+
     await db.transaction(async (tx) => {
       await tx.insert(topups).values({
         id: newId(ID_PREFIX.topup),
         teamId: input.teamId,
         userId: input.userId,
         amountMicroUsd: amount,
+        bonusMicroUsd: bonus,
         status: 'succeeded',
         provider: 'mock',
         stripeCheckoutSessionId: sessionId,
@@ -96,7 +100,7 @@ export class MockBillingProvider implements BillingProvider {
       await tx
         .update(paygBalances)
         .set({
-          balanceMicroUsd: sql`${paygBalances.balanceMicroUsd} + ${amount}`,
+          balanceMicroUsd: sql`${paygBalances.balanceMicroUsd} + ${amount + bonus}`,
           lifetimeToppedUpMicroUsd: sql`${paygBalances.lifetimeToppedUpMicroUsd} + ${amount}`,
           updatedAt: new Date(),
         })

@@ -122,7 +122,7 @@ function seedToPlanView(seed: PlanSeed): PlanView {
     allowCustomModelRouting: seed.allowCustomModelRouting ?? false,
     allowedShells: [...(seed.allowedShells ?? ['bash'])],
     supportLevel: seed.supportLevel ?? 'community',
-    marginBps: seed.marginBps ?? 2000,
+    marginBps: seed.marginBps ?? 3500,
     overageMicroUsdPerMWeighted: seed.overageMicroUsdPerMWeighted ?? 0,
     overageMicroUsdPerComputeHour: seed.overageMicroUsdPerComputeHour ?? 0,
     trialDays: seed.trialDays ?? 0,

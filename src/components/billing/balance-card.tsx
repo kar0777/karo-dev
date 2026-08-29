@@ -204,6 +204,11 @@ export function BalanceCard(props: BalanceCardProps) {
                   aria-pressed={selected}
                 >
                   {formatMicroUsd(preset)}
+                  {preset >= 100_000_000 ? (
+                    <span className="ml-1 text-[10px] text-primary">+10%</span>
+                  ) : preset >= 50_000_000 ? (
+                    <span className="ml-1 text-[10px] text-primary">+5%</span>
+                  ) : null}
                 </Button>
               );
             })}
@@ -232,7 +237,8 @@ export function BalanceCard(props: BalanceCardProps) {
                 <FieldError>{amountError}</FieldError>
               ) : (
                 <FieldHint id="topup-amount-hint">
-                  Minimum {formatMicroUsd(props.minTopupMicroUsd)}.{' '}
+                  Bigger top-ups earn bonus credit: +5% from $50, +10% from $100. Minimum{' '}
+                  {formatMicroUsd(props.minTopupMicroUsd)}.{' '}
                   {props.isSimulated
                     ? 'Simulated checkout credits the balance instantly.'
                     : 'You will be taken to a secure checkout page.'}

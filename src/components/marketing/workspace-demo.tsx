@@ -684,7 +684,7 @@ function TelemetryRail({
           {formatMicroUsd(charged, { precise: true })}
         </p>
         <p className="mt-1 text-[10.5px] leading-snug text-subtle">
-          Upstream cost plus 20% margin, settled per request.
+          Upstream cost plus 35% margin, settled per request.
         </p>
       </div>
 

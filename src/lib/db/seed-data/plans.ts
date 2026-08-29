@@ -34,7 +34,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     name: 'Pay as you go',
     tagline: 'No subscription. Upstream cost plus 20%.',
     description:
-      'Top up a balance and spend it. Nothing is included and nothing expires — every token and every compute-second is billed at what Karo pays its providers plus a flat 20% platform margin. Best if you use the agent occasionally, or if you bring your own model key and only need the machine.',
+      'Top up a balance and spend it. Nothing is included and nothing expires — every token and every compute-second is billed at what Karo pays its providers plus a flat 35% platform margin. Best if you use the agent occasionally, or if you bring your own model key and only need the machine.',
     priceMicroUsdMonthly: 0,
     priceMicroUsdYearly: 0,
 
@@ -69,7 +69,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     allowedShells: SANDBOX_SHELLS,
     supportLevel: 'community',
 
-    marginBps: 2000,
+    marginBps: 3500,
     // 0 = cost-plus. See the file header before "fixing" these to a number.
     overageMicroUsdPerMWeighted: 0,
     overageMicroUsdPerComputeHour: 0,
@@ -80,7 +80,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     highlight: false,
     features: [
       'No monthly fee — your balance is only drawn down when the agent actually runs',
-      'Model tokens billed at upstream provider cost plus a flat 20% platform margin',
+      'Model tokens billed at upstream provider cost plus a flat 35% platform margin',
       'Compute billed per second against the 0.25 vCPU / 512 MB base rate',
       '1 active sandbox — 512 MB RAM, about 416 MB of which reaches your processes',
       '5 GB of persistent project storage',
@@ -135,7 +135,7 @@ export const PLAN_SEEDS: readonly PlanSeed[] = [
     allowedShells: SANDBOX_SHELLS,
     supportLevel: 'community',
 
-    marginBps: 2000,
+    marginBps: 3500,
     overageMicroUsdPerMWeighted: 6_000_000,
     overageMicroUsdPerComputeHour: 20_000,
 

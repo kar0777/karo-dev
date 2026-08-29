@@ -8,7 +8,7 @@ import { idempotencyKeys, invoices, plans, subscriptions, teams } from '@/lib/db
 import { env } from '@/lib/env';
 import { ID_PREFIX, newId } from '@/lib/ids';
 import { createLogger } from '@/lib/logger';
-import { creditTopup } from './credit';
+import { creditTopup, topupBonusMicroUsd } from './credit';
 import {
   type AddUsageInput,
   BillingError,
@@ -468,6 +468,7 @@ export class StripeBillingProvider implements BillingProvider {
           await creditTopup({
             teamId,
             amountMicroUsd: amount,
+            bonusMicroUsd: topupBonusMicroUsd(amount),
             provider: this.key,
             idempotencyKey: event.id,
             stripeCheckoutSessionId: session.id,

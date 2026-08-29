@@ -67,7 +67,7 @@ export type SettingKey = (typeof SETTING_KEYS)[keyof typeof SETTING_KEYS];
  * it is the value in force permanently.
  */
 export const SETTING_DEFAULTS = {
-  'billing.platform_margin_bps': 2000,
+  'billing.platform_margin_bps': 3500,
   'billing.minimum_topup_micro_usd': 5_000_000,
   'billing.payg_credit_limit_micro_usd': 2_000_000,
   'compute.upstream_micro_usd_per_base_hour.karo_cloud': 9_000,
@@ -100,7 +100,7 @@ export const SETTING_META: Record<SettingKey, SettingMeta> = {
   'billing.platform_margin_bps': {
     label: 'Platform margin',
     description:
-      'Margin a newly created plan starts with when the create request does not set one. 2000 = +20%. Settlement always reads the plan row, so existing plans and their subscribers are untouched by a change here.',
+      'Margin a newly created plan starts with when the create request does not set one. 3500 = +35%. Settlement always reads the plan row, so existing plans and their subscribers are untouched by a change here.',
     category: 'billing',
     unit: 'basis points',
   },

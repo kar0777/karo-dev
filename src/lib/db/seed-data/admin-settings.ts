@@ -22,7 +22,7 @@ export const ADMIN_SETTING_SEEDS: readonly AdminSettingSeed[] = [
   /* ------------------------------ billing ------------------------------ */
   {
     key: 'billing.platform_margin_bps',
-    value: 2000,
+    value: 3500,
     valueType: 'number',
     category: 'billing',
     label: 'Default platform margin (bps)',
