@@ -140,6 +140,7 @@ export default async function AdminModelsPage() {
     minPlanTier: row.model.minPlanTier,
     isEnabled: row.model.isEnabled,
     isDefault: row.model.isDefault,
+    adminOnly: row.model.adminOnly,
     sortOrder: row.model.sortOrder,
     adminOverride: row.model.adminOverride ?? null,
     providerKey: row.providerKey,

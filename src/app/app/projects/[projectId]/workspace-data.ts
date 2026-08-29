@@ -87,6 +87,8 @@ export type LoadWorkspaceDataInput = {
   team: Team;
   role: TeamRole;
   userId: string;
+  /** Platform admins see operator-reserved (adminOnly) models in the picker. */
+  isPlatformAdmin?: boolean;
   /**
    * From `?conversation=` — the run the caller wants open. The agents page and
    * the onboarding wizard both deep-link this way, so honouring it is what makes
@@ -131,6 +133,7 @@ export async function loadWorkspaceData({
   role,
   userId,
   preferredConversationId,
+  isPlatformAdmin = false,
 }: LoadWorkspaceDataInput): Promise<WorkspaceData> {
   const projectId = project.id;
 
@@ -477,6 +480,7 @@ export async function loadWorkspaceData({
     models: modelRows
       .filter((row) => tierAtLeast(plan.tier, row.model.minPlanTier))
       .filter((row) => reachableProviders === null || reachableProviders.has(row.providerKey))
+      .filter((row) => !row.model.adminOnly || isPlatformAdmin)
       .map((row): WorkspaceModel => ({
         id: row.model.id,
         slug: row.model.slug,

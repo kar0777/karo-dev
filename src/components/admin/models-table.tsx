@@ -58,6 +58,8 @@ export type AdminModelRow = {
   minPlanTier: string;
   isEnabled: boolean;
   isDefault: boolean;
+  /** Operator-reserved: hidden from every picker except a platform admin's. */
+  adminOnly: boolean;
   sortOrder: number;
   adminOverride: Record<string, unknown> | null;
   providerKey: string;
@@ -267,6 +269,7 @@ export function ModelsTable({ models }: { models: AdminModelRow[] }) {
                 <TableHead className="hidden sm:table-cell">Min tier</TableHead>
                 <TableHead className="text-right">Price / Mtok</TableHead>
                 <TableHead>Enabled</TableHead>
+                <TableHead className="hidden md:table-cell">Admin only</TableHead>
                 <TableHead>Default</TableHead>
                 <TableHead className="w-8" aria-label="Details" />
               </TableRow>
@@ -348,6 +351,22 @@ export function ModelsTable({ models }: { models: AdminModelRow[] }) {
                           model,
                           { isDefault: next },
                           next ? 'Default model changed' : 'No longer the default',
+                        )
+                      }
+                    />
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Switch
+                      aria-label={`Reserve ${model.displayName} for platform admins`}
+                      checked={model.adminOnly}
+                      disabled={savingId === model.id}
+                      onCheckedChange={(next) =>
+                        patch(
+                          model,
+                          { adminOnly: next },
+                          next
+                            ? 'Reserved for platform admins'
+                            : 'Visible to every eligible plan',
                         )
                       }
                     />

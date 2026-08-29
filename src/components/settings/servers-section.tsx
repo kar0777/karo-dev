@@ -59,12 +59,14 @@ export type ServersSectionProps = {
   planName: string;
   /** Built by `buildInstallCommand` so this and the token dialog cannot diverge. */
   installCommandExample: string;
+  installCommandExampleWindows: string;
 };
 
 type IssuedToken = {
   workerName: string;
   token: string;
   command: string;
+  commandWindows: string;
   expiresAt: string;
   rotated: boolean;
 };
@@ -75,6 +77,7 @@ export function ServersSection({
   allowOwnServer,
   planName,
   installCommandExample,
+  installCommandExampleWindows,
 }: ServersSectionProps) {
   const router = useRouter();
   const [registerOpen, setRegisterOpen] = React.useState(false);
@@ -101,7 +104,10 @@ export function ServersSection({
         </Alert>
       ) : null}
 
-      <HowItWorks installCommandExample={installCommandExample} />
+      <HowItWorks
+        installCommandExample={installCommandExample}
+        installCommandExampleWindows={installCommandExampleWindows}
+      />
 
       <Card>
         <CardHeader>
@@ -181,9 +187,11 @@ export function ServersSection({
 
 function HowItWorks({
   installCommandExample,
+  installCommandExampleWindows,
 }: {
   /** Built by `buildInstallCommand` so this and the token dialog cannot diverge. */
   installCommandExample: string;
+  installCommandExampleWindows: string;
 }) {
   const steps = [
     {
@@ -246,7 +254,10 @@ function HowItWorks({
           <p className="mb-1.5 text-[12px] font-medium text-muted">
             The install command, for reference
           </p>
-          <CodeBlock language="bash" code={installCommandExample} />
+          <InstallCommandBlock
+            sh={installCommandExample}
+            powershell={installCommandExampleWindows}
+          />
         </div>
 
         <Alert variant="primary" icon={<ShieldCheck />}>
@@ -312,6 +323,7 @@ function WorkerRow({
       const result = await apiFetch<{
         installToken: string;
         installCommand: string;
+        installCommandWindows: string;
         expiresAt: string;
       }>(`/api/workers/${worker.id}/rotate`, { method: 'POST' });
 
@@ -319,6 +331,7 @@ function WorkerRow({
         workerName: worker.name,
         token: result.installToken,
         command: result.installCommand,
+        commandWindows: result.installCommandWindows,
         expiresAt: result.expiresAt,
         rotated: true,
       });
@@ -548,6 +561,7 @@ function RegisterDialog({
       const result = await apiFetch<{
         installToken: string;
         installCommand: string;
+        installCommandWindows: string;
         expiresAt: string;
       }>('/api/workers', { method: 'POST', json: { name: trimmed } });
 
@@ -555,6 +569,7 @@ function RegisterDialog({
         workerName: trimmed,
         token: result.installToken,
         command: result.installCommand,
+        commandWindows: result.installCommandWindows,
         expiresAt: result.expiresAt,
         rotated: false,
       });
@@ -684,11 +699,12 @@ function TokenDialog({ issued, onClose }: { issued: IssuedToken | null; onClose:
 
           <div>
             <p className="mb-1.5 text-[12px] font-medium text-muted">Install command</p>
-            <CodeBlock language="bash" code={issued.command} filename="run on your server" />
+            <InstallCommandBlock sh={issued.command} powershell={issued.commandWindows} />
           </div>
 
           <p className="text-[12px] leading-relaxed text-muted">
-            The machine needs outbound HTTPS to Karo and a rootless Docker daemon. It does{' '}
+            The machine — Linux, macOS with Docker Desktop, or Windows 10/11 with Docker Desktop
+            and Node — needs outbound HTTPS to Karo. It does{' '}
             <span className="font-medium text-fg">not</span> need a public IP, an open port, or
             any inbound access at all.
           </p>
@@ -716,5 +732,43 @@ function TokenDialog({ issued, onClose }: { issued: IssuedToken | null; onClose:
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Install command, per operating system
+ * ------------------------------------------------------------------ */
+
+/** The same one-time token, wrapped for bash (Linux, macOS) or PowerShell (Windows). */
+function InstallCommandBlock({ sh, powershell }: { sh: string; powershell: string }) {
+  const [target, setTarget] = React.useState<'sh' | 'powershell'>('sh');
+
+  return (
+    <div>
+      <div className="mb-1.5 flex gap-1.5" role="group" aria-label="Server operating system">
+        {(
+          [
+            ['sh', 'Linux / macOS'],
+            ['powershell', 'Windows'],
+          ] as const
+        ).map(([value, label]) => (
+          <Button
+            key={value}
+            type="button"
+            size="xs"
+            variant={target === value ? 'primary' : 'secondary'}
+            onClick={() => setTarget(value)}
+            aria-pressed={target === value}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      <CodeBlock
+        language={target === 'sh' ? 'bash' : 'powershell'}
+        code={target === 'sh' ? sh : powershell}
+        filename={target === 'sh' ? 'run on your server' : 'run in PowerShell'}
+      />
+    </div>
   );
 }

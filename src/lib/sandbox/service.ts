@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 
 import { resolveAgentPermissions } from '@/lib/agent/policy';
 import {
@@ -23,6 +23,7 @@ import {
   type Sandbox as SandboxRow,
   type Team,
   type User,
+  byosWorkers,
 } from '@/lib/db/schema';
 import { env } from '@/lib/env';
 import { ID_PREFIX, newId } from '@/lib/ids';
@@ -224,7 +225,7 @@ export async function createSandboxForProject(
     ? getProvider(input.provider)
     : await resolveProviderForTarget(project.runtimeTarget);
 
-  const workerId = input.workerId ?? project.workerId ?? null;
+  let workerId = input.workerId ?? project.workerId ?? null;
 
   if (provider.key === 'remote-docker') {
     if (!plan.allowOwnServer) {
@@ -233,14 +234,50 @@ export async function createSandboxForProject(
       );
     }
     if (!workerId) {
-      throw new ConflictError(
-        'This project runs on your own server but no server is selected.',
-        {
-          title: 'No server selected',
-          description:
-            'Register a machine under Settings → Servers, then pick it in the project settings before creating a sandbox.',
-        },
-      );
+      // Auto-attach: the team's freshest online worker. Demanding a manual
+      // pick in project settings meant "Create a sandbox" could never succeed
+      // for a team with exactly one server — which is most teams.
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60_000);
+      const [candidate] = await db
+        .select({ id: byosWorkers.id })
+        .from(byosWorkers)
+        .where(
+          and(
+            eq(byosWorkers.teamId, team.id),
+            eq(byosWorkers.status, 'online'),
+            gte(byosWorkers.lastHeartbeatAt, twoMinutesAgo),
+          ),
+        )
+        .orderBy(desc(byosWorkers.lastHeartbeatAt))
+        .limit(1);
+
+      if (!candidate) {
+        const registeredRows = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(byosWorkers)
+          .where(and(eq(byosWorkers.teamId, team.id), ne(byosWorkers.status, 'revoked')));
+        const registered = Number(registeredRows[0]?.count ?? 0);
+
+        throw new ConflictError(
+          registered > 0
+            ? 'Your server is not connected right now.'
+            : 'No server is registered on this team yet.',
+          {
+            title: registered > 0 ? 'Your server is offline' : 'No server registered',
+            description:
+              registered > 0
+                ? 'Start the karo-worker service on your machine, give it a minute to come online, then create the sandbox again.'
+                : 'Register your computer under Settings → Servers to run sandboxes on your own hardware.',
+          },
+        );
+      }
+
+      workerId = candidate.id;
+      // Persist the attachment so the workspace view and later runs agree.
+      await db
+        .update(projects)
+        .set({ workerId: candidate.id, updatedAt: new Date() })
+        .where(eq(projects.id, project.id));
     }
   }
   if (provider.key === 'daytona' && !plan.allowExternalSandbox) {

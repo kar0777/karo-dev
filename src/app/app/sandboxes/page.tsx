@@ -34,7 +34,8 @@ import { SandboxesView, type SandboxFilter, type TeamSandboxView } from './sandb
 
 export const metadata: Metadata = {
   title: 'Sandboxes',
-  description: 'The Linux machines your projects run on, and what their compute has cost.',
+  description:
+    'The machines your projects run on — Linux, macOS or Windows — and what their compute has cost.',
 };
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;

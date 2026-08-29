@@ -1,0 +1,1 @@
+ALTER TABLE "models" ADD COLUMN "admin_only" boolean DEFAULT false NOT NULL;

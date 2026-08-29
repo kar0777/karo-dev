@@ -38,6 +38,7 @@ const bodySchema = z.object({
   minPlanTier: z.enum(['payg', 'lite', 'pro', 'scale', 'ultra']).optional(),
   isEnabled: z.boolean().optional(),
   isDefault: z.boolean().optional(),
+  adminOnly: z.boolean().optional(),
   sortOrder: z.number().int().min(0).max(10_000).optional(),
   /** Free-form pin against catalogue sync; `null` clears it. */
   adminOverride: z.record(z.string(), z.unknown()).nullable().optional(),

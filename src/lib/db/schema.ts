@@ -440,6 +440,12 @@ export const models = pgTable(
     minPlanTier: planTierEnum('min_plan_tier').notNull().default('payg'),
     isEnabled: boolean('is_enabled').notNull().default(true),
     isDefault: boolean('is_default').notNull().default(false),
+    /**
+     * Operator-reserved: hidden from every picker except a platform admin's.
+     * How an operator keeps an expensive experiment (or a personal favourite)
+     * reachable for themselves without offering it to every team.
+     */
+    adminOnly: boolean('admin_only').notNull().default(false),
     /** Set by an admin to pin values against catalogue sync. */
     adminOverride: jsonb('admin_override').$type<Record<string, unknown>>(),
     sortOrder: integer('sort_order').notNull().default(100),

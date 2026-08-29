@@ -9,7 +9,7 @@ import { NotFoundError } from '@/lib/api/errors';
 import { requireProjectAccess } from '@/lib/auth/guards';
 import { db } from '@/lib/db';
 import { projects } from '@/lib/db/schema';
-import { PermissionError } from '@/lib/rbac/permissions';
+import { isPlatformAdmin, PermissionError } from '@/lib/rbac/permissions';
 
 import { WorkspaceShell } from './workspace-shell';
 import { loadWorkspaceData } from './workspace-data';
@@ -81,6 +81,7 @@ export default async function ProjectWorkspacePage({
     team: access.team,
     role: access.role,
     userId: access.user.id,
+    isPlatformAdmin: isPlatformAdmin(access.user.platformRole),
     preferredConversationId: requestedConversation ?? null,
   });
 

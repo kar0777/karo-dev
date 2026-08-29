@@ -98,6 +98,7 @@ export const POST = defineHandler(
       // Shown once. Never retrievable afterwards — only the hash is stored.
       installToken: installToken.token,
       installCommand: buildInstallCommand(installToken.token),
+      installCommandWindows: buildInstallCommand(installToken.token, 'powershell'),
       expiresAt: installToken.expiresAt.toISOString(),
       expiresInMinutes: Math.round(INSTALL_TOKEN_TTL_MS / 60_000),
     });

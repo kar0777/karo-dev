@@ -43,6 +43,13 @@
       "when": 1787945083989,
       "tag": "0005_workable_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787989882945,
+      "tag": "0006_pink_scream",
+      "breakpoints": true
     }
   ]
 }

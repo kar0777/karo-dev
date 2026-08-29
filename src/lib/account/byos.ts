@@ -76,9 +76,24 @@ export function hashWorkerToken(token: string): string {
  * shipping it that way. `BYOS_INSTALL_SCRIPT_URL` still overrides, for an
  * operator who mirrors the agent somewhere of their own.
  */
-export function buildInstallCommand(installToken: string): string {
+export function buildInstallCommand(
+  installToken: string,
+  target: 'sh' | 'powershell' = 'sh',
+): string {
   const appUrl = env.APP_URL.replace(/\/+$/, '');
   const mirrored = env.BYOS_INSTALL_SCRIPT_URL.trim();
+
+  // The agent is a plain Node file, so Windows needs no shell magic — PowerShell
+  // uses Invoke-WebRequest in place of curl. A mirrored install script stays a
+  // bash installer by contract, so the PowerShell path always fetches the raw
+  // agent from this install instead.
+  if (target === 'powershell') {
+    const scriptUrl = mirrored || `${appUrl}/api/worker/install`;
+    return [
+      `Invoke-WebRequest -Uri ${scriptUrl} -OutFile karo-worker.mjs`,
+      `node karo-worker.mjs --token ${installToken} --url ${appUrl}`,
+    ].join('; ');
+  }
 
   if (mirrored) {
     return `curl -fsSL ${mirrored} | sh -s -- --token ${installToken} --url ${appUrl}`;

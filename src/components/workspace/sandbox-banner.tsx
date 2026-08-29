@@ -17,7 +17,8 @@ import { useWorkspace } from './workspace-context';
  * it rather than just naming the problem.
  */
 export function SandboxBanner({ className }: { className?: string }) {
-  const { sandbox, sandboxBusy, startSandbox, restartSandbox, data } = useWorkspace();
+  const { sandbox, sandboxBusy, createSandbox, startSandbox, restartSandbox, data } =
+    useWorkspace();
 
   if (!sandbox) {
     return (
@@ -29,8 +30,14 @@ export function SandboxBanner({ className }: { className?: string }) {
             commands, install packages or start a dev server.
           </p>
           {data.capabilities.canCreateSandbox ? (
-            <Button size="xs" variant="secondary" className="mt-2" asChild>
-              <a href="/app/sandboxes">Create a sandbox</a>
+            <Button
+              size="xs"
+              variant="secondary"
+              className="mt-2"
+              loading={sandboxBusy}
+              onClick={() => void createSandbox()}
+            >
+              Create a sandbox
             </Button>
           ) : null}
         </AlertDescription>

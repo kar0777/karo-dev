@@ -26,17 +26,9 @@ import {
 } from '@/components/ui/collapsible';
 import { StatusDot, type StatusDotStatus } from '@/components/ui/dot';
 import { Meter } from '@/components/ui/meter';
-import { SegmentedControl } from '@/components/ui/segmented';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { AGENT_MODES, AGENT_MODE_META, AGENT_PERMISSION_META } from '@/lib/agent/policy';
+import { AGENT_MODE_META, AGENT_PERMISSION_META } from '@/lib/agent/policy';
 import type { AgentPermissionKey } from '@/lib/agent/policy';
-import type { AgentMode, SandboxStatus } from '@/lib/db/schema';
+import type { SandboxStatus } from '@/lib/db/schema';
 import {
   cn,
   formatCompactNumber,
@@ -125,9 +117,9 @@ function SandboxCard() {
           but cannot run anything until you give it one.
         </p>
         {data.capabilities.canCreateSandbox ? (
-          <Button size="sm" variant="secondary" className="mt-2 w-full" asChild>
-            <Link href="/app/sandboxes">Create a sandbox</Link>
-          </Button>
+          <p className="mt-2 text-[11.5px] leading-snug text-subtle">
+            Create one with the button at the top of the conversation.
+          </p>
         ) : null}
       </div>
     );
@@ -286,75 +278,16 @@ const ACTIVITY_TONE = {
 } as const;
 
 export function RightRail() {
-  const { data, modelId, setModelId, mode, setMode, sessionUsage, activity, sandbox } =
-    useWorkspace();
-
-  const modeOptions = React.useMemo(
-    () =>
-      AGENT_MODES.map((value) => ({
-        value,
-        label: AGENT_MODE_META[value].label,
-        title: AGENT_MODE_META[value].description,
-      })),
-    [],
-  );
-
-  const activeModel = data.models.find((model) => model.id === modelId) ?? null;
+  const { data, mode, sessionUsage, activity, sandbox } = useWorkspace();
   const connectedMcp = data.mcpServers.filter((server) => server.status === 'connected').length;
   const enabledSkills = data.skills.filter((skill) => skill.isEnabled);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface">
       <Section title="Agent" icon={<Sparkles className="size-3.5" />}>
-        <div className="space-y-2.5">
-          <div>
-            <label
-              htmlFor="right-rail-model"
-              className="mb-1 block text-[11.5px] font-medium text-muted"
-            >
-              Model
-            </label>
-            <Select value={modelId ?? undefined} onValueChange={setModelId}>
-              <SelectTrigger id="right-rail-model" size="sm">
-                <SelectValue placeholder="Choose a model" />
-              </SelectTrigger>
-              <SelectContent>
-                {data.models.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    {model.displayName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {activeModel ? (
-              <p className="karo-numeric mt-1 text-[11px] text-subtle">
-                {formatCompactNumber(activeModel.contextWindow)} context ·{' '}
-                {formatMicroUsd(activeModel.inputMicroUsdPerMtok)} /{' '}
-                {formatMicroUsd(activeModel.outputMicroUsdPerMtok)} per Mtok
-              </p>
-            ) : null}
-          </div>
-
-          <div>
-            <span
-              className="mb-1 block text-[11.5px] font-medium text-muted"
-              id="right-rail-mode"
-            >
-              Mode
-            </span>
-            <SegmentedControl<AgentMode>
-              options={modeOptions}
-              value={mode}
-              onValueChange={setMode}
-              size="sm"
-              fullWidth
-              aria-labelledby="right-rail-mode"
-            />
-            <p className="mt-1 text-[11px] leading-snug text-subtle">
-              {AGENT_MODE_META[mode].description}
-            </p>
-          </div>
-        </div>
+        <p className="text-[11.5px] leading-snug text-subtle">
+          {AGENT_MODE_META[mode].description} Model and mode are chosen in the composer below.
+        </p>
       </Section>
 
       <Section title="Machine" icon={<Cpu className="size-3.5" />}>

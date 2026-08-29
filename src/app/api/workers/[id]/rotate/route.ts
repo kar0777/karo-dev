@@ -87,6 +87,7 @@ export const POST = defineHandler(
       worker: toWorkerView(updated[0] ?? existing),
       installToken: installToken.token,
       installCommand: buildInstallCommand(installToken.token),
+      installCommandWindows: buildInstallCommand(installToken.token, 'powershell'),
       expiresAt: installToken.expiresAt.toISOString(),
       expiresInMinutes: Math.round(INSTALL_TOKEN_TTL_MS / 60_000),
     });

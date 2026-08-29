@@ -162,6 +162,7 @@ type WorkspaceContextValue = {
   /* Sandbox */
   sandbox: WorkspaceSandbox | null;
   sandboxBusy: boolean;
+  createSandbox: () => Promise<void>;
   startSandbox: () => void;
   stopSandbox: () => void;
   restartSandbox: () => void;
@@ -1482,6 +1483,46 @@ export function WorkspaceProvider({
   );
 
   const startSandbox = React.useCallback(() => sandboxAction('start'), [sandboxAction]);
+
+  /**
+   * Creates the project's sandbox. Defaults to the Nano preset — a size every
+   * plan allows — because the point of this button is to get the agent running
+   * in one click; resizing lives with the machine itself.
+   */
+  const createSandbox = React.useCallback(async () => {
+    if (!data.capabilities.canCreateSandbox) return;
+    setSandboxBusy(true);
+    try {
+      const payload = await apiFetch<{ sandbox: Partial<WorkspaceSandbox> & { id: string } }>(
+        '/api/sandboxes',
+        { json: { projectId, cpuCores: 0.25, memoryMb: 512, diskGb: 5 } },
+      );
+      const createdSandbox = payload.sandbox;
+      setSandbox({
+        id: createdSandbox.id,
+        name: createdSandbox.name ?? 'Sandbox',
+        provider: createdSandbox.provider ?? 'mock',
+        status: (createdSandbox.status as WorkspaceSandbox['status']) ?? 'creating',
+        statusMessage: createdSandbox.statusMessage ?? null,
+        cpuCores: createdSandbox.cpuCores ?? 0.25,
+        memoryMb: createdSandbox.memoryMb ?? 512,
+        diskGb: createdSandbox.diskGb ?? 5,
+        cpuPercent: 0,
+        memoryUsedMb: 0,
+        diskUsedMb: 0,
+        processCount: 0,
+        autoSleepMinutes: createdSandbox.autoSleepMinutes ?? 15,
+        previewUrl: null,
+        startedAt: createdSandbox.startedAt ?? null,
+        lastActiveAt: createdSandbox.lastActiveAt ?? null,
+      });
+      notify('success', 'Sandbox created — it is starting up.');
+    } catch (error) {
+      reportError(error, 'Could not create the sandbox');
+    } finally {
+      setSandboxBusy(false);
+    }
+  }, [data.capabilities.canCreateSandbox, notify, projectId, reportError]);
   const stopSandbox = React.useCallback(() => sandboxAction('stop'), [sandboxAction]);
   const restartSandbox = React.useCallback(() => sandboxAction('restart'), [sandboxAction]);
 
@@ -1745,6 +1786,7 @@ export function WorkspaceProvider({
       rejectChanges,
       sandbox,
       sandboxBusy,
+      createSandbox,
       startSandbox,
       stopSandbox,
       restartSandbox,
@@ -1826,6 +1868,7 @@ export function WorkspaceProvider({
       sessionUsage,
       setMode,
       setModelId,
+      createSandbox,
       slashCommands,
       startSandbox,
       stopRun,
