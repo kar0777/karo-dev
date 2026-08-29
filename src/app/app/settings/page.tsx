@@ -313,8 +313,8 @@ async function renderServers(
       canManage={canManage}
       allowOwnServer={allowOwnServer}
       planName={planName}
-      installCommandExample={buildInstallCommand('<installation-token>')}
-      installCommandExampleWindows={buildInstallCommand('<installation-token>', 'powershell')}
+      installCommandExample={buildInstallCommand('INSTALL_TOKEN')}
+      installCommandExampleWindows={buildInstallCommand('INSTALL_TOKEN', 'powershell')}
     />
   );
 }

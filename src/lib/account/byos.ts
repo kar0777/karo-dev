@@ -67,14 +67,15 @@ export function hashWorkerToken(token: string): string {
  *
  * It used to pipe `https://get.karo.dev/worker.sh` into a shell. That domain has
  * never existed, so the command every operator was told to paste on their server
- * failed at the first step. The agent now comes from this deployment's own
- * `/api/worker/install`, which is both reachable and one origin fewer to trust.
+ * failed at the first step. The agent and the enrolment script now come from
+ * this deployment's own `/api/worker/install` and `/api/worker/setup`, which are
+ * both reachable and one origin fewer to trust.
  *
- * It downloads and then runs, rather than piping into a shell: the agent is a
- * single auditable file, and asking someone to execute it on their own
- * infrastructure without a chance to read it first would undercut the point of
- * shipping it that way. `BYOS_INSTALL_SCRIPT_URL` still overrides, for an
- * operator who mirrors the agent somewhere of their own.
+ * On Linux and macOS the command pipes the enrolment script into a shell: it
+ * installs a service, not a foreground process, so closing the terminal never
+ * kills the machine the user just connected. The script itself is a single
+ * auditable file served from this install. `BYOS_INSTALL_SCRIPT_URL` still
+ * overrides, for an operator who mirrors the agent somewhere of their own.
  */
 export function buildInstallCommand(
   installToken: string,
@@ -99,17 +100,12 @@ export function buildInstallCommand(
     return `curl -fsSL ${mirrored} | sh -s -- --token ${installToken} --url ${appUrl}`;
   }
 
-  // The agent runs detached (nohup + log file + a follow-up `tail` so the paste
-  // still shows the worker coming up). A foreground command ties the agent to
-  // the SSH session that installed it: close the laptop's terminal and the
-  // "server" the user just connected silently dies. The agent already retries
-  // network failures on its own, so plain nohup is enough — no global npm
-  // installs (which need root) and no systemd unit (which needs root too).
-  // The PowerShell path stays foreground on purpose: a hidden Windows process
-  // would have no visible log and no sane way to stop it.
-  return [
-    `curl -fsSL ${appUrl}/api/worker/install -o karo-worker.mjs`,
-    `nohup node karo-worker.mjs --token ${installToken} --url ${appUrl} > karo-worker.log 2>&1 &`,
-    'sleep 2 && tail -n 5 karo-worker.log',
-  ].join('\n');
+  // One command. The setup script downloads the agent into ~/.karo, exchanges
+  // the install token for the worker token (--register-only) and installs a
+  // service that survives terminal close and reboots — a systemd *user* unit
+  // on Linux, a LaunchAgent on macOS, nohup + @reboot cron as the fallback.
+  // No step needs root, and the service itself never carries a token argument,
+  // so it cannot get stuck re-registering with a consumed token. The app URL
+  // is baked into the script, which leaves the token as the only argument.
+  return `curl -fsSL ${appUrl}/api/worker/setup | sh -s -- --token ${installToken}`;
 }

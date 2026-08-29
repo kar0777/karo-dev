@@ -1,7 +1,11 @@
 import 'server-only';
 
+import { and, eq } from 'drizzle-orm';
+
 import { normalizeWorkspacePath, WORKSPACE_ROOT } from '@/lib/agent/policy';
 import { redactText } from '@/lib/crypto/secrets';
+import { db } from '@/lib/db';
+import { sandboxes } from '@/lib/db/schema';
 import type {
   CreateSandboxOptions,
   ExecuteCommand,
@@ -55,11 +59,11 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   private async route(sandboxId: string): Promise<{ workerId: string; externalId: string }> {
-    const entry = this.routes.get(sandboxId);
+    const entry = await this.lookupRoute(sandboxId);
     if (!entry) {
       throw new SandboxError(
         'not_found',
-        'This sandbox is not bound to a server in this process.',
+        'This sandbox is not attached to a server. Create a new sandbox to keep working.',
         { status: 404 },
       );
     }
@@ -70,6 +74,32 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
         { status: 503, retryable: true },
       );
     }
+    return entry;
+  }
+
+  /**
+   * The in-process map is only a cache. On serverless, the request that created
+   * a sandbox and this one can land on different instances — and a create that
+   * timed out caller-side may never have persisted its external id at all. The
+   * binding is therefore re-derived from durable state: the worker lives on the
+   * sandboxes row, and the container name is deterministic from the sandbox id.
+   */
+  private async lookupRoute(
+    sandboxId: string,
+  ): Promise<{ workerId: string; externalId: string } | null> {
+    const cached = this.routes.get(sandboxId);
+    if (cached) return cached;
+
+    const rows = await db
+      .select({ workerId: sandboxes.workerId, externalId: sandboxes.externalId })
+      .from(sandboxes)
+      .where(and(eq(sandboxes.id, sandboxId), eq(sandboxes.provider, this.key)))
+      .limit(1);
+    const row = rows[0];
+    if (!row?.workerId) return null;
+
+    const entry = { workerId: row.workerId, externalId: row.externalId ?? externalIdFor(sandboxId) };
+    this.routes.set(sandboxId, entry);
     return entry;
   }
 
@@ -89,7 +119,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
       );
     }
 
-    const externalId = `karo-${options.sandboxId.slice(-16)}`;
+    const externalId = externalIdFor(options.sandboxId);
 
     // A first create may pull the base image on the worker. The window is
     // deliberately shorter than the pull itself can take on a slow line: if
@@ -167,11 +197,13 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
 
   async stopSandbox(id: string): Promise<void> {
     const { workerId, externalId } = await this.route(id);
-    await this.expectOk(dispatch(workerId, { kind: 'stop', sandboxExternalId: externalId }));
+    const result = await dispatch(workerId, { kind: 'stop', sandboxExternalId: externalId });
+    if (!result.ok && /no such container/i.test(result.error ?? '')) return; // already gone
+    await this.expectOk(Promise.resolve(result));
   }
 
   async destroySandbox(id: string): Promise<void> {
-    const entry = this.routes.get(id);
+    const entry = await this.lookupRoute(id);
     if (!entry) return;
     try {
       if (await isWorkerOnline(entry.workerId)) {
@@ -186,7 +218,7 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
   }
 
   async getStatus(id: string): Promise<SandboxRuntimeStatus> {
-    const entry = this.routes.get(id);
+    const entry = await this.lookupRoute(id);
     if (!entry) return 'destroyed';
     if (!(await isWorkerOnline(entry.workerId))) return 'sleeping';
     try {
@@ -422,6 +454,11 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
 function absolute(path: string): string {
   if (path === WORKSPACE_ROOT) return WORKSPACE_ROOT;
   return `${WORKSPACE_ROOT}/${normalizeWorkspacePath(path)}`;
+}
+
+/** The container name on the worker — a pure function of the sandbox id. */
+function externalIdFor(sandboxId: string): string {
+  return `karo-${sandboxId.slice(-16)}`;
 }
 
 function isRuntimeStatus(value: unknown): value is SandboxRuntimeStatus {

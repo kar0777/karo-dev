@@ -78,12 +78,14 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['dockerode', 'postgres', 'ioredis', 'ssh2', 'nodemailer'],
 
   /**
-   * `/api/worker/install` reads the worker agent off disk to serve it, and file
-   * tracing only follows imports — so a standalone build would ship without it
-   * and the BYOS install command would 500 in production while working locally.
+   * `/api/worker/install` reads the worker agent off disk to serve it, and
+   * `/api/worker/setup` reads the enrolment script the same way — file tracing
+   * only follows imports, so a standalone build would ship without them and
+   * the BYOS install command would 500 in production while working locally.
    */
   outputFileTracingIncludes: {
     '/api/worker/install': ['./worker/karo-worker.mjs'],
+    '/api/worker/setup': ['./worker/setup.sh'],
   },
 
   experimental: {

@@ -69,13 +69,14 @@ const POLL_ERROR_BACKOFF_MAX_MS = 60_000;
  * ------------------------------------------------------------------ */
 
 function parseArgs(argv) {
-  const args = { dryRun: false, verbose: false };
+  const args = { dryRun: false, registerOnly: false, verbose: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--token') args.token = argv[++i];
     else if (arg === '--url') args.url = argv[++i];
     else if (arg === '--name') args.name = argv[++i];
     else if (arg === '--dry-run') args.dryRun = true;
+    else if (arg === '--register-only') args.registerOnly = true;
     else if (arg === '--verbose' || arg === '-v') args.verbose = true;
     else if (arg === '--help' || arg === '-h') args.help = true;
   }
@@ -92,11 +93,14 @@ function usage() {
       '  karo-worker [--dry-run] [--verbose]',
       '',
       'Options:',
-      '  --token     One-time installation token from Settings → Servers.',
-      '  --url       Your Karo control-plane URL, e.g. https://karo.example.com',
-      '  --name      Label shown in the Karo UI. Defaults to this hostname.',
-      '  --dry-run   Simulate execution instead of running Docker.',
-      '  --verbose   Log every command received.',
+      '  --token          One-time installation token from Settings → Servers.',
+      '  --url            Your Karo control-plane URL, e.g. https://karo.example.com',
+      '  --name           Label shown in the Karo UI. Defaults to this hostname.',
+      '  --register-only  Exchange the install token for the worker token, save it',
+      '                   and exit. Used by the one-command installer so the service',
+      '                   itself never needs a token argument.',
+      '  --dry-run        Simulate execution instead of running Docker.',
+      '  --verbose        Log every command received.',
       '',
       'The worker connects outbound only. It never opens a port.',
       '',
@@ -811,6 +815,12 @@ async function main() {
       dryRun: args.dryRun,
     });
     config = loadConfig();
+
+    // The installer's one-shot step: trade the install token for the worker
+    // token, persist it and leave. The service itself always runs without
+    // token arguments — a consumed install token in a service definition
+    // would turn every restart into a registration failure loop.
+    if (args.registerOnly) return;
   }
 
   if (!config?.workerToken) {

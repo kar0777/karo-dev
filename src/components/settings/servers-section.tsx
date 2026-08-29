@@ -200,7 +200,7 @@ function HowItWorks({
     },
     {
       title: 'The agent trades it for a long-lived worker token',
-      body: 'The command downloads the agent from this Karo install — a single dependency-free Node file you can read before running it — then registers, reports CPU, memory and disk, and burns the installation token in the same request.',
+      body: 'One command downloads the agent from this Karo install — a single dependency-free Node file you can read before running it — installs it as a service on your machine, then registers, reports CPU, memory and disk, and burns the installation token in the same request.',
     },
     {
       title: 'The agent long-polls Karo for work',
@@ -667,8 +667,8 @@ function TokenDialog({ issued, onClose }: { issued: IssuedToken | null; onClose:
               : `${issued.workerName} is ready to connect`}
           </DialogTitle>
           <DialogDescription>
-            Run this on the machine. It downloads the agent, registers it and starts it detached
-            — the agent keeps running after you close the terminal.
+            Run this one command on the machine. It installs the agent as a service that keeps
+            running after you close the terminal and comes back after a reboot — no root needed.
           </DialogDescription>
         </DialogHeader>
 
@@ -706,11 +706,13 @@ function TokenDialog({ issued, onClose }: { issued: IssuedToken | null; onClose:
             The machine — Linux, macOS with Docker Desktop, or Windows 10/11 with Docker Desktop
             and Node — needs outbound HTTPS to Karo. It does{' '}
             <span className="font-medium text-fg">not</span> need a public IP, an open port, or
-            any inbound access at all. On Linux the agent runs detached: its log lands in{' '}
-            <code className="font-mono text-[11.5px] text-fg">karo-worker.log</code> next to the
-            agent, and{' '}
-            <code className="font-mono text-[11.5px] text-fg">pkill -f karo-worker.mjs</code>{' '}
-            stops it.
+            any inbound access at all. On Linux the agent lands in a systemd user service (
+            <code className="font-mono text-[11.5px] text-fg">
+              journalctl --user -u karo-worker -f
+            </code>{' '}
+            for logs), on macOS in a LaunchAgent logging to{' '}
+            <code className="font-mono text-[11.5px] text-fg">~/.karo/log/worker.log</code>.
+            Re-running the command is safe — it refreshes the agent and re-registers.
           </p>
 
           <label className="flex items-start gap-2 text-[13px] text-fg">
