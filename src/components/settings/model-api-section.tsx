@@ -34,12 +34,15 @@ import {
 export type ModelAvailability = {
   id: string;
   name: string;
+  providerKey: string;
   providerName: string;
   family: string;
   contextWindow: number;
   minPlanTier: PlanTier;
   requiredPlanLabel: string;
   available: boolean;
+  /** The provider holds a usable credential — Karo's or this user's own key. */
+  ready: boolean;
   isDefault: boolean;
   supportsVision: boolean;
   supportsTools: boolean;
@@ -80,7 +83,8 @@ export function ModelApiSection({
 }: ModelApiSectionProps) {
   const activeByok = byok.filter((key) => key.isActive);
   const runningOnOwnKey = activeByok.length > 0;
-  const availableCount = models.filter((model) => model.available).length;
+  const availableCount = models.filter((model) => model.available && model.ready).length;
+  const availableTotal = models.filter((model) => model.available).length;
 
   return (
     <div className="space-y-4">
@@ -141,10 +145,12 @@ export function ModelApiSection({
                 Models on {planName}
               </dt>
               <dd className="karo-numeric mt-1 text-[13px] font-medium text-fg">
-                {availableCount} of {models.length}
+                {availableCount} of {availableTotal}
               </dd>
               <dd className="mt-0.5 text-[11px] text-subtle">
-                Higher tiers unlock the larger frontier models.
+                {availableCount < availableTotal
+                  ? 'The rest need their provider key added under API keys.'
+                  : 'Higher tiers unlock the larger frontier models.'}
               </dd>
             </div>
           </dl>
@@ -192,8 +198,8 @@ export function ModelApiSection({
         <CardHeader>
           <CardTitle>Model availability</CardTitle>
           <CardDescription>
-            Every model in the catalogue and whether the {planName} plan can select it. Pricing
-            and usage live in Billing.
+            Every model in the catalogue, whether the {planName} plan covers it, and whether a
+            provider key can actually serve it right now. Pricing and usage live in Billing.
           </CardDescription>
         </CardHeader>
 
@@ -235,15 +241,20 @@ export function ModelApiSection({
                     {formatCompactNumber(model.contextWindow, 0)} tokens
                   </TableCell>
                   <TableCell className="text-right">
-                    {model.available ? (
-                      <span className="inline-flex items-center gap-1 text-[12px] text-success">
-                        <CircleCheck className="size-3.5" aria-hidden="true" />
-                        Included
-                      </span>
-                    ) : (
+                    {!model.available ? (
                       <span className="inline-flex items-center gap-1 text-[12px] text-subtle">
                         <CircleSlash className="size-3.5" aria-hidden="true" />
                         Needs {model.requiredPlanLabel}
+                      </span>
+                    ) : model.ready ? (
+                      <span className="inline-flex items-center gap-1 text-[12px] text-success">
+                        <CircleCheck className="size-3.5" aria-hidden="true" />
+                        Ready
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[12px] text-warning">
+                        <KeyRound className="size-3.5" aria-hidden="true" />
+                        Needs {model.providerName} key
                       </span>
                     )}
                   </TableCell>

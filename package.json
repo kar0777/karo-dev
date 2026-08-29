@@ -2,7 +2,7 @@
   "name": "karo",
   "version": "1.0.0",
   "private": true,
-  "description": "Karo — cloud platform with a built-in AI coding agent that has a real computer.",
+  "description": "Karo \u2014 cloud platform with a built-in AI coding agent that has a real computer.",
   "engines": {
     "node": ">=20.11.0"
   },
@@ -17,6 +17,7 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,md}\" \"tests/**/*.ts\" \"worker/*.mjs\" \"*.{ts,mjs}\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --tsconfig ./tsconfig.scripts.json src/lib/db/migrate.ts",
+    "db:providers": "tsx --tsconfig ./tsconfig.scripts.json src/lib/db/sync-providers.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --tsconfig ./tsconfig.scripts.json src/lib/db/seed.ts",
     "db:studio": "drizzle-kit studio",

@@ -40,7 +40,7 @@ import {
   type TeamRole,
 } from '@/lib/db/schema';
 import { configuredProviderKeys } from '@/lib/ai';
-import { env, publicConfig } from '@/lib/env';
+import { publicConfig } from '@/lib/env';
 import { SHELL_META } from '@/components/app/meta';
 import { toMcpServerView } from '@/lib/extensions/mcp-view';
 import { tierAtLeast } from '@/lib/extensions/service';
@@ -314,24 +314,26 @@ export async function loadWorkspaceData({
 
   /**
    * Provider keys a run could genuinely reach: Karo's own credentials plus any
-   * the user supplied themselves. `null` means "do not filter" — when nothing is
-   * configured every model is served by the simulator, so hiding them all would
-   * leave an empty picker, and the demo badge already explains what is happening.
+   * the user supplied themselves. `null` means "do not filter" — when NOTHING
+   * anywhere can serve a model, every completion comes from the simulator, and
+   * hiding the whole picker would be worse than an honest demo badge.
    *
-   * Keyed on `AI_PROVIDER` rather than `DEMO_MODE` on purpose: an install with
-   * Stripe configured but no model provider is not in demo mode, yet still has
-   * nothing that can serve a model.
+   * The resolved `AI_PROVIDER` is deliberately not consulted here: with no
+   * platform key it resolves to `mock`, and treating that as "demo, show
+   * everything" made the picker offer models whose provider has no key at all —
+   * the run would simulate an answer under a name the user did not choose. A
+   * user with their own key for exactly one provider sees exactly that
+   * provider's models.
    */
   const reachableProviders: Set<string> | null = await (async () => {
-    if (env.AI_PROVIDER === 'mock') return null;
-
     const platform = configuredProviderKeys();
     const byok = await db
       .selectDistinct({ providerKey: userApiKeys.providerKey })
       .from(userApiKeys)
       .where(and(eq(userApiKeys.userId, userId), eq(userApiKeys.isActive, true)));
 
-    return new Set([...platform, ...byok.map((row) => row.providerKey)]);
+    const keys = new Set([...platform, ...byok.map((row) => row.providerKey)]);
+    return keys.size > 0 ? keys : null;
   })();
 
   /* ---------------- Sandbox + terminals ---------------- */

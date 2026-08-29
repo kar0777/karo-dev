@@ -15,6 +15,7 @@ import {
 import { describeSession } from '@/lib/account/sessions';
 import { getActiveTeam, requireUser } from '@/lib/auth/guards';
 import { listUserSessions } from '@/lib/auth/session';
+import { configuredProviderKeys } from '@/lib/ai';
 import { db } from '@/lib/db';
 import {
   byosWorkers,
@@ -231,33 +232,49 @@ async function renderModelApi(
 
   const providerNames = new Map(providerRows.map((row) => [row.key, row.name]));
 
+  /**
+   * What this user can genuinely reach: Karo's platform credentials plus their
+   * own active BYOK keys. Without the user's keys here, the page told an
+   * operator with a personal W&B key that every Omniakey model was "Included"
+   * — included in nothing, since no credential anywhere could serve it.
+   */
+  const reachable = new Set<string>(configuredProviderKeys());
+  for (const key of keyRows) {
+    if (key.isActive) reachable.add(key.providerKey);
+  }
+
   const catalogue: ModelAvailability[] = modelRows.map((row) => ({
     id: row.model.id,
     name: row.model.displayName,
+    providerKey: row.provider.key,
     providerName: row.provider.name,
     family: row.model.family,
     contextWindow: row.model.contextWindow,
     minPlanTier: row.model.minPlanTier,
     requiredPlanLabel: PLAN_TIER_LABELS[row.model.minPlanTier],
     available: planTierAtLeast(planTier, row.model.minPlanTier),
+    ready: reachable.has(row.provider.key),
     isDefault: row.model.isDefault,
     supportsVision: row.model.supportsVision,
     supportsTools: row.model.supportsTools,
   }));
 
-  // Demo mode overrides whatever the catalogue says: everything runs on the
-  // simulator, and pretending otherwise here would be a lie in the UI.
-  const activeKey = env.DEMO_MODE ? 'mock' : env.AI_PROVIDER;
-  const activeName = env.DEMO_MODE
-    ? 'Karo simulator (demo mode)'
-    : // The catalogue row is the better label when it exists; the descriptor
-      // name covers a provider that is configured but not yet seeded.
-      (providerNames.get(activeKey) ?? env.AI_PROVIDER_NAME);
+  // What actually answers this user's runs: their own active key first, then
+  // Karo's platform credentials, then the simulator. The raw `env.AI_PROVIDER`
+  // describes the install, not the person viewing the page.
+  const activeByokKey = keyRows.find((row) => row.isActive);
+  const platformKey = configuredProviderKeys()[0];
+  const activeKey = activeByokKey?.providerKey ?? platformKey ?? 'mock';
+  const activeName = activeByokKey
+    ? `${providerNames.get(activeKey) ?? activeKey} (your key)`
+    : platformKey
+      ? (providerNames.get(activeKey) ?? env.AI_PROVIDER_NAME)
+      : 'Karo simulator (nothing configured)';
 
   return (
     <ModelApiSection
       demoMode={env.DEMO_MODE}
-      activeProvider={{ key: activeKey, name: activeName, configured: !env.DEMO_MODE }}
+      activeProvider={{ key: activeKey, name: activeName, configured: reachable.size > 0 }}
       byok={keyRows.map((row) => {
         const view = toApiKeyView(row, providerNames.get(row.providerKey));
         return {

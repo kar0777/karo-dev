@@ -72,6 +72,12 @@ jobs:
         if: env.DATABASE_URL != ''
         run: npx tsx src/lib/db/migrate.ts
 
+      # Provider registry rows (anthropic, hypercli, …) so Admin → Models sync,
+      # catalogue discovery and the BYOK dialog know them without a full reseed.
+      - name: Sync provider registry
+        if: env.DATABASE_URL != ''
+        run: npx tsx --tsconfig ./tsconfig.scripts.json src/lib/db/sync-providers.ts
+
   tick:
     name: Maintenance tick
     runs-on: ubuntu-latest
