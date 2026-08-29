@@ -4,6 +4,9 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import { getProviderByKey } from '@/lib/ai';
 import { quotedAPrice, reportedFields } from '@/lib/ai/catalog-merge';
+import { findDescriptor } from '@/lib/ai/providers/descriptors';
+import { AnthropicMessagesProvider } from '@/lib/ai/providers/anthropic-messages';
+import { OpenAiCompatibleProvider } from '@/lib/ai/providers/openai-compatible';
 import type { ProviderModelInfo } from '@/lib/ai/types';
 import { db } from '@/lib/db';
 import { modelPrices, models, providers } from '@/lib/db/schema';
@@ -63,8 +66,33 @@ function applyOverride<T extends Record<string, unknown>>(
   return { ...values, ...override } as T;
 }
 
+/** A caller-supplied credential for a provider the platform itself has no key for. */
+export type ByokCredential = { apiKey: string; baseUrl?: string };
+
+/**
+ * A throwaway adapter carrying the caller's own key. Discovery is a platform
+ * operation, but on installs where the operator's only keys are their own BYOK
+ * entries, the platform has nothing to discover with — and "Sync from
+ * provider" pressed by the one person who holds the keys should work.
+ */
+function adapterWithCredentials(
+  key: string,
+  credential: ByokCredential,
+): ReturnType<typeof getProviderByKey> | null {
+  const descriptor = findDescriptor(key);
+  if (!descriptor) return null;
+  const options = { apiKey: credential.apiKey, baseUrl: credential.baseUrl };
+  return descriptor.protocol === 'anthropic-messages'
+    ? new AnthropicMessagesProvider(descriptor, options)
+    : new OpenAiCompatibleProvider(descriptor, options);
+}
+
 export async function syncProviderCatalogs(
-  options: { onlyConfigured?: boolean } = {},
+  options: {
+    onlyConfigured?: boolean;
+    /** Per-provider keys from the calling admin, used only where the platform has none. */
+    byokCredentials?: Map<string, ByokCredential>;
+  } = {},
 ): Promise<CatalogSyncResult> {
   const providerRows = await db.select().from(providers).where(eq(providers.isEnabled, true));
   const changes: SyncChange[] = [];
@@ -72,10 +100,15 @@ export async function syncProviderCatalogs(
   const now = new Date();
 
   for (const provider of providerRows) {
-    const adapter = getProviderByKey(provider.key);
+    const platformAdapter = getProviderByKey(provider.key);
+    const byok = options.byokCredentials?.get(provider.key);
+    const adapter =
+      !platformAdapter.isConfigured() && byok
+        ? (adapterWithCredentials(provider.key, byok) ?? platformAdapter)
+        : platformAdapter;
 
     // The nightly tick only reaches for providers that hold credentials, so a
-    // dormant descriptor (no key in the env yet) stays quiet until an operator
+    // dormant descriptor (no key anywhere yet) stays quiet until an operator
     // opts in by pressing Sync in the admin.
     if (options.onlyConfigured && !adapter.isConfigured()) continue;
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, History, Plus, RefreshCw, Save, Search, X } from 'lucide-react';
+import { Check, History, Plus, RefreshCw, Save, Search, Trash2, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
@@ -587,6 +587,29 @@ function ModelDrawer({ model, onClose }: { model: AdminModelRow | null; onClose:
     }
   }
 
+  async function deleteModel() {
+    if (!model) return;
+    if (
+      !window.confirm(
+        `Delete "${model.displayName}" from the catalogue? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiFetch(`/api/admin/models/${model.id}`, { method: 'DELETE' });
+      toast.success('Model deleted', { description: model.displayName });
+      onClose();
+      router.refresh();
+    } catch (caught) {
+      const described = describeError(caught);
+      toast.error(described.title, { description: described.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Sheet open={model !== null} onOpenChange={(open) => (open ? null : onClose())}>
       <SheetContent side="right" className="w-[min(32rem,calc(100vw-1.5rem))] p-0">
@@ -672,6 +695,25 @@ function ModelDrawer({ model, onClose }: { model: AdminModelRow | null; onClose:
               onClick={saveOverride}
             >
               Save override
+            </Button>
+          </section>
+
+          <section className="border-t border-line py-4">
+            <h3 className="mb-2 text-[11px] font-medium tracking-wide text-danger uppercase">
+              Danger zone
+            </h3>
+            <p className="mb-2 text-[12px] leading-relaxed text-muted">
+              Removes the model from the catalogue outright. A model with recorded usage cannot
+              be deleted — billing history keeps its price attribution, so disable it instead.
+            </p>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={busy}
+              iconLeft={<Trash2 />}
+              onClick={() => void deleteModel()}
+            >
+              Delete model
             </Button>
           </section>
         </div>

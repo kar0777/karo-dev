@@ -86,6 +86,13 @@ export function ModelApiSection({
   const availableCount = models.filter((model) => model.available && model.ready).length;
   const availableTotal = models.filter((model) => model.available).length;
 
+  // The catalogue is the full truth, but a table of models nobody can run is
+  // noise: ready (and plan-locked) models lead, the ones waiting on a key
+  // collapse behind a disclosure.
+  const readyModels = models.filter((model) => model.available && model.ready);
+  const tierLockedModels = models.filter((model) => !model.available);
+  const needsKeyModels = models.filter((model) => model.available && !model.ready);
+
   return (
     <div className="space-y-4">
       <Card>
@@ -214,56 +221,88 @@ export function ModelApiSection({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {models.map((model) => (
-                <TableRow key={model.id}>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="font-medium text-fg">{model.name}</span>
-                      {model.isDefault ? (
-                        <Badge size="sm" variant="primary">
-                          Default
-                        </Badge>
-                      ) : null}
-                      {model.supportsVision ? (
-                        <Badge size="sm" variant="outline">
-                          Vision
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <span className="text-[11px] text-subtle sm:hidden">
-                      {model.providerName}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden text-muted sm:table-cell">
-                    {model.providerName}
-                  </TableCell>
-                  <TableCell className="karo-numeric hidden text-muted md:table-cell">
-                    {formatCompactNumber(model.contextWindow, 0)} tokens
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {!model.available ? (
-                      <span className="inline-flex items-center gap-1 text-[12px] text-subtle">
-                        <CircleSlash className="size-3.5" aria-hidden="true" />
-                        Needs {model.requiredPlanLabel}
-                      </span>
-                    ) : model.ready ? (
-                      <span className="inline-flex items-center gap-1 text-[12px] text-success">
-                        <CircleCheck className="size-3.5" aria-hidden="true" />
-                        Ready
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[12px] text-warning">
-                        <KeyRound className="size-3.5" aria-hidden="true" />
-                        Needs {model.providerName} key
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
+              {readyModels.map((model) => (
+                <AvailabilityRow key={model.id} model={model} />
+              ))}
+              {tierLockedModels.map((model) => (
+                <AvailabilityRow key={model.id} model={model} />
               ))}
             </TableBody>
           </Table>
+
+          {needsKeyModels.length > 0 ? (
+            <details className="mt-3 px-4">
+              <summary className="cursor-pointer text-[12.5px] text-muted">
+                {needsKeyModels.length} more model
+                {needsKeyModels.length === 1 ? '' : 's'} in the catalogue need a provider key —
+                add one under API keys, or show them
+              </summary>
+              <div className="mt-2">
+                <Table containerClassName="rounded-lg border border-line">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Model</TableHead>
+                      <TableHead className="hidden sm:table-cell">Provider</TableHead>
+                      <TableHead className="hidden md:table-cell">Context</TableHead>
+                      <TableHead className="text-right">Availability</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {needsKeyModels.map((model) => (
+                      <AvailabilityRow key={model.id} model={model} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </details>
+          ) : null}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function AvailabilityRow({ model }: { model: ModelAvailability }) {
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-medium text-fg">{model.name}</span>
+          {model.isDefault ? (
+            <Badge size="sm" variant="primary">
+              Default
+            </Badge>
+          ) : null}
+          {model.supportsVision ? (
+            <Badge size="sm" variant="outline">
+              Vision
+            </Badge>
+          ) : null}
+        </div>
+        <span className="text-[11px] text-subtle sm:hidden">{model.providerName}</span>
+      </TableCell>
+      <TableCell className="hidden text-muted sm:table-cell">{model.providerName}</TableCell>
+      <TableCell className="karo-numeric hidden text-muted md:table-cell">
+        {formatCompactNumber(model.contextWindow, 0)} tokens
+      </TableCell>
+      <TableCell className="text-right">
+        {!model.available ? (
+          <span className="inline-flex items-center gap-1 text-[12px] text-subtle">
+            <CircleSlash className="size-3.5" aria-hidden="true" />
+            Needs {model.requiredPlanLabel}
+          </span>
+        ) : model.ready ? (
+          <span className="inline-flex items-center gap-1 text-[12px] text-success">
+            <CircleCheck className="size-3.5" aria-hidden="true" />
+            Ready
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[12px] text-warning">
+            <KeyRound className="size-3.5" aria-hidden="true" />
+            Needs {model.providerName} key
+          </span>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }

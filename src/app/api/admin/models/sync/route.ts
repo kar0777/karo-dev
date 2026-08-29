@@ -1,8 +1,13 @@
+import { and, eq } from 'drizzle-orm';
+
 import { defineHandler } from '@/lib/api/handler';
 import { json } from '@/lib/api/responses';
 import { AUDIT_ACTIONS } from '@/lib/audit';
 import { requireApiPlatformAdmin } from '@/lib/auth/guards';
-import { syncProviderCatalogs } from '@/lib/ai/catalog-sync';
+import { syncProviderCatalogs, type ByokCredential } from '@/lib/ai/catalog-sync';
+import { decryptSecret } from '@/lib/crypto/secrets';
+import { db } from '@/lib/db';
+import { userApiKeys } from '@/lib/db/schema';
 
 /**
  * Refresh the catalogue from every enabled provider, on demand.
@@ -24,10 +29,37 @@ export const POST = defineHandler(
       severity: 'notice',
     },
   },
-  async ({ setAudit }) => {
+  async ({ user, setAudit }) => {
     await requireApiPlatformAdmin();
 
-    const { syncedProviders, changes, errors, syncedAt } = await syncProviderCatalogs();
+    // Discovery runs on the platform's keys where they exist, and on the
+    // calling admin's own active keys for the rest — on an install whose only
+    // credentials are the operator's BYOK entries, those ARE the platform.
+    const byokRows = await db
+      .select({
+        providerKey: userApiKeys.providerKey,
+        keyCiphertext: userApiKeys.keyCiphertext,
+        baseUrl: userApiKeys.baseUrl,
+      })
+      .from(userApiKeys)
+      .where(and(eq(userApiKeys.userId, user.id), eq(userApiKeys.isActive, true)));
+
+    const byokCredentials = new Map<string, ByokCredential>();
+    for (const row of byokRows) {
+      if (byokCredentials.has(row.providerKey)) continue;
+      try {
+        byokCredentials.set(row.providerKey, {
+          apiKey: decryptSecret(row.keyCiphertext),
+          baseUrl: row.baseUrl ?? undefined,
+        });
+      } catch {
+        // A key encrypted under a rotated ENCRYPTION_KEY is unusable; skip it.
+      }
+    }
+
+    const { syncedProviders, changes, errors, syncedAt } = await syncProviderCatalogs({
+      byokCredentials,
+    });
 
     setAudit({
       resourceId: 'catalog',

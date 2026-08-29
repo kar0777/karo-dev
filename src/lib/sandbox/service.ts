@@ -233,6 +233,22 @@ export async function createSandboxForProject(
         `The ${plan.name} plan cannot run sandboxes on your own server. Upgrade the plan, or switch this project to Karo Cloud.`,
       );
     }
+    // A stale attachment must not block creation: a revoked worker, or one
+    // that stopped heartbeating, would fail every run with "offline". Fall
+    // back to the team's freshest online worker and re-attach.
+    if (workerId) {
+      const [attached] = await db
+        .select({ status: byosWorkers.status, lastHeartbeatAt: byosWorkers.lastHeartbeatAt })
+        .from(byosWorkers)
+        .where(eq(byosWorkers.id, workerId))
+        .limit(1);
+      const fresh =
+        attached &&
+        attached.status !== 'revoked' &&
+        attached.lastHeartbeatAt !== null &&
+        Date.now() - attached.lastHeartbeatAt.getTime() < 2 * 60_000;
+      if (!fresh) workerId = null;
+    }
     if (!workerId) {
       // Auto-attach: the team's freshest online worker. Demanding a manual
       // pick in project settings meant "Create a sandbox" could never succeed

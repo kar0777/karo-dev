@@ -1,13 +1,13 @@
-import { and, desc, eq, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { NotFoundError, ValidationError } from '@/lib/api/errors';
+import { ConflictError, NotFoundError, ValidationError } from '@/lib/api/errors';
 import { defineHandler } from '@/lib/api/handler';
 import { json } from '@/lib/api/responses';
 import { AUDIT_ACTIONS } from '@/lib/audit';
 import { requireApiPlatformAdmin } from '@/lib/auth/guards';
 import { db } from '@/lib/db';
-import { modelPrices, models } from '@/lib/db/schema';
+import { modelPrices, models, usageEvents } from '@/lib/db/schema';
 import { ID_PREFIX, newId } from '@/lib/ids';
 
 /**
@@ -176,5 +176,56 @@ export const PATCH = defineHandler(
 
     const [updated] = await db.select().from(models).where(eq(models.id, modelId)).limit(1);
     return json({ model: updated, changed, newPriceId });
+  },
+);
+
+/**
+ * Removes a model from the catalogue outright — the complement to disabling.
+ * A model that has recorded usage cannot be deleted: its usage events are the
+ * billing record, and `ON DELETE SET NULL` would sever them from the tariff
+ * that priced them. Those get disabled instead, which keeps history intact.
+ */
+export const DELETE = defineHandler(
+  {
+    auth: 'required',
+    rateLimit: 'api.default',
+    audit: {
+      action: AUDIT_ACTIONS.adminModelUpdate,
+      resourceType: 'model',
+      severity: 'warning',
+    },
+  },
+  async ({ params, user, setAudit }) => {
+    await requireApiPlatformAdmin();
+    const modelId = paramModelId(params);
+
+    const [current] = await db.select().from(models).where(eq(models.id, modelId)).limit(1);
+    if (!current) throw new NotFoundError('That model does not exist.');
+
+    const [usage] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(usageEvents)
+      .where(eq(usageEvents.modelId, modelId));
+    if (Number(usage?.count ?? 0) > 0) {
+      throw new ConflictError(
+        `"${current.displayName}" has ${usage?.count} recorded usage event(s), so its history stays for billing.`,
+        {
+          title: 'Model has usage history',
+          description:
+            'Disable it instead — it disappears from every picker while history keeps its price attribution.',
+        },
+      );
+    }
+
+    await db.delete(modelPrices).where(eq(modelPrices.modelId, modelId));
+    await db.delete(models).where(eq(models.id, modelId));
+
+    setAudit({
+      resourceId: modelId,
+      summary: `Deleted model "${current.displayName}" (${current.slug})`,
+      metadata: { slug: current.slug, actorId: user.id },
+    });
+
+    return json({ ok: true });
   },
 );
