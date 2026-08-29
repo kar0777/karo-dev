@@ -1,6 +1,8 @@
 'use client';
 
-import { Moon, Play, RefreshCw, Server, TriangleAlert } from 'lucide-react';
+import * as React from 'react';
+
+import { Moon, Play, RefreshCw, Server, TriangleAlert, X } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -19,6 +21,10 @@ import { useWorkspace } from './workspace-context';
 export function SandboxBanner({ className }: { className?: string }) {
   const { sandbox, sandboxBusy, createSandbox, startSandbox, restartSandbox, data } =
     useWorkspace();
+  // The transient banners are status, not mail — but a user watching a long
+  // image download is allowed to hide the spinner. Per-mount state: a status
+  // change brings the banner back, which is the point.
+  const [dismissedTransient, setDismissedTransient] = React.useState(false);
 
   if (!sandbox) {
     return (
@@ -47,17 +53,28 @@ export function SandboxBanner({ className }: { className?: string }) {
 
   if (sandbox.status === 'running') return null;
 
-  if (sandbox.status === 'starting' || sandbox.status === 'creating') {
+  if ((sandbox.status === 'starting' || sandbox.status === 'creating') && !dismissedTransient) {
     return (
-      <Alert variant="primary" icon={<Spinner size="sm" label={null} />} className={className}>
-        <AlertTitle>Starting {sandbox.name}…</AlertTitle>
-        <AlertDescription>
-          <p>
-            Karo is bringing the machine up on {sandbox.provider}. Commands you send now will
-            run as soon as it is ready.
-          </p>
-        </AlertDescription>
-      </Alert>
+      <div className={cnRelative(className)}>
+        <Alert variant="primary" icon={<Spinner size="sm" label={null} />}>
+          <AlertTitle>Starting {sandbox.name}…</AlertTitle>
+          <AlertDescription>
+            <p>
+              Karo is bringing the machine up on {sandbox.provider}. Commands you send now will
+              run as soon as it is ready. The MACHINE panel keeps showing progress after you
+              close this.
+            </p>
+          </AlertDescription>
+        </Alert>
+        <button
+          type="button"
+          aria-label="Hide the progress banner"
+          className="absolute top-2 right-2 rounded p-1 text-muted hover:text-fg"
+          onClick={() => setDismissedTransient(true)}
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
     );
   }
 
@@ -126,4 +143,9 @@ export function SandboxBanner({ className }: { className?: string }) {
       </AlertDescription>
     </Alert>
   );
+}
+
+/** Keeps the caller's classes while giving the close button an anchor. */
+function cnRelative(className: string | undefined): string {
+  return ['relative', className].filter(Boolean).join(' ');
 }

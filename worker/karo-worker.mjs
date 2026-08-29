@@ -395,6 +395,11 @@ async function handleCommand(command, ctx) {
 
   switch (command.kind) {
     case 'create': {
+      // A leftover container from an earlier timed-out create would make this
+      // run fail with a name conflict — clear the way first. `rm -f` on a
+      // name that does not exist exits non-zero; ignore that.
+      await docker(['rm', '-f', command.sandboxExternalId], { timeoutMs: 15_000 });
+
       // A stock image needs its workspace directory prepared: the container
       // runs as an unprivileged uid, and a root-owned /workspace would make
       // every write fail. Preparing here is what lets any public image work.

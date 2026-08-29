@@ -153,7 +153,16 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
 
   async startSandbox(id: string): Promise<void> {
     const { workerId, externalId } = await this.route(id);
-    await this.expectOk(dispatch(workerId, { kind: 'start', sandboxExternalId: externalId }));
+    const result = await dispatch(workerId, { kind: 'start', sandboxExternalId: externalId });
+    if (!result.ok && /no such container/i.test(result.error ?? '')) {
+      // The container was pruned on the host (or never finished creating).
+      // Report as not_found so the service re-provisions instead of leaving
+      // the user a row that can never start.
+      throw new SandboxError('not_found', result.error ?? 'The container is gone.', {
+        status: 404,
+      });
+    }
+    await this.expectOk(Promise.resolve(result));
   }
 
   async stopSandbox(id: string): Promise<void> {
