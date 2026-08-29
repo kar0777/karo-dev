@@ -5,6 +5,7 @@ import { syncProviderCatalogs } from '@/lib/ai/catalog-sync';
 import { applyDuePlanChanges } from '@/lib/billing/plan-changes';
 import { sweepAutoTopups } from '@/lib/billing/auto-topup';
 import { sweepIdleSandboxes } from '@/lib/sandbox/service';
+import { sweepStaleWorkerCommands } from '@/lib/sandbox/worker-bus';
 import { GET } from '@/app/api/cron/tick/route';
 
 /**
@@ -22,6 +23,7 @@ vi.mock('@/lib/ai/catalog-sync', () => ({ syncProviderCatalogs: vi.fn() }));
 vi.mock('@/lib/billing/auto-topup', () => ({ sweepAutoTopups: vi.fn() }));
 vi.mock('@/lib/billing/plan-changes', () => ({ applyDuePlanChanges: vi.fn() }));
 vi.mock('@/lib/sandbox/service', () => ({ sweepIdleSandboxes: vi.fn() }));
+vi.mock('@/lib/sandbox/worker-bus', () => ({ sweepStaleWorkerCommands: vi.fn() }));
 
 // The route runs through defineHandler, whose audit step would write to the
 // database; the tick's audit record is not what these tests are about.
@@ -67,6 +69,7 @@ beforeEach(() => {
     errors: [],
     syncedAt: new Date(),
   });
+  vi.mocked(sweepStaleWorkerCommands).mockResolvedValue({ reaped: 0 });
 });
 
 afterEach(() => {
@@ -92,6 +95,7 @@ describe('GET /api/cron/tick', () => {
       'billing-auto-topup',
       'billing-apply-pending',
       'catalog-sync',
+      'worker-command-reaper',
     ]);
     expect(body.jobs.every((job) => job.ok)).toBe(true);
   });
@@ -127,6 +131,7 @@ describe('GET /api/cron/tick', () => {
     vi.mocked(sweepAutoTopups).mockRejectedValue(new Error('db down'));
     vi.mocked(applyDuePlanChanges).mockRejectedValue(new Error('db down'));
     vi.mocked(syncProviderCatalogs).mockRejectedValue(new Error('db down'));
+    vi.mocked(sweepStaleWorkerCommands).mockRejectedValue(new Error('db down'));
 
     const response = await call({ authorization: `Bearer ${SECRET}` });
 

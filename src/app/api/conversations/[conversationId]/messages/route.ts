@@ -41,6 +41,16 @@ import { SSE_HEADERS, encodeSse, type AgentStreamEvent } from '@/lib/types/agent
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * A turn runs the whole model loop — every tool call included — inside this
+ * one function. 300s is the platform ceiling on the free tier: past the cap
+ * the function is killed outright, the event stream just ends, and the chat
+ * spins forever on nothing. In-turn command waits are bounded well below
+ * this (`MAX_IN_TURN_WAIT_MS` in the sandbox provider) so a slow install
+ * surfaces as a still-running result rather than a killed function.
+ */
+export const maxDuration = 300;
+
 const log = createLogger('api:chat');
 
 const attachmentSchema = z.object({

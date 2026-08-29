@@ -174,7 +174,7 @@ export const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: 'run_command',
     description:
-      'Run a shell command inside the project sandbox. Never runs on the Karo host. Destructive commands require user approval.',
+      'Run a shell command inside the project sandbox. Never runs on the Karo host. Destructive commands require user approval. The server executes one command at a time, and a check on a running command returns after roughly two minutes even when the command itself may keep running: if a result says the command was not cancelled, it is still executing — end your turn, tell the user, and verify later with a cheap check (for example `ls node_modules` after an install) instead of restarting it.',
     parameters: {
       type: 'object',
       properties: {
@@ -185,7 +185,11 @@ export const BUILTIN_TOOL_DEFINITIONS: ToolDefinition[] = [
           enum: ['bash', 'sh', 'powershell', 'cmd'],
           description: 'Shell to use. Defaults to the project shell.',
         },
-        timeout_seconds: { type: 'number', description: 'Maximum runtime, default 120.' },
+        timeout_seconds: {
+          type: 'number',
+          description:
+            'Maximum runtime in seconds, default 120. The kill deadline for the process — not how long the chat waits for a look at it.',
+        },
       },
       required: ['command'],
       additionalProperties: false,

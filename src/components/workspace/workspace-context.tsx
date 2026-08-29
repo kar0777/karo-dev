@@ -768,6 +768,11 @@ export function WorkspaceProvider({
       // than in `handleEvent`: assembling the retry needs the text and the
       // attachments, and this is the only scope that still has them.
       const refusal: { event: CostConfirmationEvent | null } = { event: null };
+      // `run.end` and `error` are the only honorable ways a stream ends. When
+      // the connection closes without either — a killed serverless function,
+      // a dropped socket — the turn did not finish, and calling it "complete"
+      // would hide the gap from the user.
+      let terminated = false;
 
       try {
         await apiStream(
@@ -793,9 +798,23 @@ export function WorkspaceProvider({
           },
           (event) => {
             if (event.type === 'cost.confirmation_required') refusal.event = event;
+            if (event.type === 'run.end' || event.type === 'error') terminated = true;
             handleEvent(event);
           },
         );
+
+        if (!terminated && !refusal.event) {
+          patchAssistant((message) => ({
+            ...message,
+            status: 'failed',
+            error: {
+              code: 'internal',
+              message:
+                'The response was interrupted before it finished. Send it again to retry.',
+              retryable: true,
+            },
+          }));
+        }
 
         const refused = refusal.event;
         if (refused) {

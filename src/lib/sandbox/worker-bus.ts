@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 import { byosCommands, byosWorkers } from '@/lib/db/schema';
@@ -128,7 +128,7 @@ export type WorkerEvent =
   | { type: 'sandbox_status'; sandboxExternalId: string; status: string };
 
 export const WORKER_POLL_HOLD_MS = 25_000;
-const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
+export const DEFAULT_COMMAND_TIMEOUT_MS = 180_000;
 /** How often `dispatch` checks for its result and the long-poll re-claims. */
 const QUEUE_CHECK_INTERVAL_MS = 1_000;
 
@@ -186,15 +186,42 @@ export async function dispatch(
     }
   }
 
-  // Give up and stop the row from being claimed by a worker that arrives late.
+  // Give up waiting. Only a *queued* row is expired here: a claimed row is
+  // executing on the worker right now — marking it expired would make the
+  // worker's result bounce, and the command (an npm install, a build) keeps
+  // running either way. Orphaned claimed rows are the reaper's job, not ours.
   await db
     .update(byosCommands)
     .set({ status: 'expired', error: 'The caller stopped waiting.', completedAt: new Date() })
-    .where(and(eq(byosCommands.id, id), inArray(byosCommands.status, ['queued', 'claimed'])));
+    .where(and(eq(byosCommands.id, id), eq(byosCommands.status, 'queued')));
 
   throw new Error(
     'Your server did not respond in time. Check that the karo-worker service is running and can reach the internet.',
   );
+}
+
+/**
+ * Expire commands a worker claimed but never finished — the worker died or
+ * lost connection mid-execution (a laptop went to sleep, Wi-Fi dropped).
+ * Without this the rows stay `claimed` forever: nothing else transitions a
+ * claimed command, and every late result delivery just bounces off.
+ *
+ * Runs on the maintenance tick. The grace window is deliberately wider than
+ * the longest legitimate command (the worker kills its own processes at the
+ * command deadline) so a slow-but-alive worker is never reaped mid-run.
+ */
+export async function sweepStaleWorkerCommands(): Promise<{ reaped: number }> {
+  const cutoff = new Date(Date.now() - 5 * 60_000);
+  const rows = await db
+    .update(byosCommands)
+    .set({
+      status: 'expired',
+      error: 'The worker stopped responding mid-command. Re-run it.',
+      completedAt: new Date(),
+    })
+    .where(and(eq(byosCommands.status, 'claimed'), lt(byosCommands.timeoutAt, cutoff)))
+    .returning({ id: byosCommands.id });
+  return { reaped: rows.length };
 }
 
 /** Fire-and-forget — used for terminal keystrokes, where a result is pointless. */

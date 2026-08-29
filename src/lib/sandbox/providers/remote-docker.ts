@@ -21,6 +21,7 @@ import type {
 } from '../types';
 import { SandboxError } from '../types';
 import {
+  DEFAULT_COMMAND_TIMEOUT_MS,
   dispatch,
   dispatchNoWait,
   isWorkerOnline,
@@ -241,40 +242,72 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
     const { workerId, externalId } = await this.route(id);
     const started = Date.now();
 
-    const result = await dispatch(
-      workerId,
-      {
-        kind: 'exec',
-        sandboxExternalId: externalId,
-        command: command.command,
-        shell: command.shell ?? 'bash',
-        cwd: command.cwd ? absolute(command.cwd) : WORKSPACE_ROOT,
-        env: command.env ?? {},
-        timeoutSeconds: command.timeoutSeconds ?? 120,
-      },
-      (command.timeoutSeconds ?? 120) * 1000 + 15_000,
-    );
+    try {
+      const result = await dispatch(
+        workerId,
+        {
+          kind: 'exec',
+          sandboxExternalId: externalId,
+          command: command.command,
+          shell: command.shell ?? 'bash',
+          cwd: command.cwd ? absolute(command.cwd) : WORKSPACE_ROOT,
+          env: command.env ?? {},
+          timeoutSeconds: command.timeoutSeconds ?? 120,
+        },
+        // The worker's own kill deadline is `timeoutSeconds`, but the agent
+        // turn waiting for this result runs inside one serverless function:
+        // past its duration cap the function is killed outright and the
+        // browser is left spinning on a dead stream. Wait bounded here and
+        // report a still-running command instead.
+        inTurnWaitMs((command.timeoutSeconds ?? 120) * 1000 + 15_000),
+      );
 
-    if (!result.ok) {
-      throw new SandboxError('internal', result.error ?? 'The command failed on your server.');
+      if (!result.ok) {
+        throw new SandboxError(
+          'internal',
+          result.error ?? 'The command failed on your server.',
+        );
+      }
+
+      const data = (result.data ?? {}) as {
+        stdout?: string;
+        stderr?: string;
+        exitCode?: number;
+        timedOut?: boolean;
+        truncated?: boolean;
+      };
+
+      return {
+        stdout: redactText(data.stdout ?? ''),
+        stderr: redactText(data.stderr ?? ''),
+        exitCode: data.exitCode ?? 0,
+        durationMs: Date.now() - started,
+        timedOut: Boolean(data.timedOut),
+        truncated: Boolean(data.truncated),
+      };
+    } catch (error) {
+      // The command may well still be executing on the worker (installs and
+      // builds are slow; the worker is single-threaded and may also still be
+      // draining an earlier command). Say exactly that so the model ends its
+      // turn and checks back later instead of treating it as a failure.
+      if (error instanceof Error && error.message.includes('did not respond in time')) {
+        return {
+          stdout: '',
+          stderr:
+            'Karo stopped waiting for this command, but the command was NOT cancelled — ' +
+            'it keeps running in the sandbox. Slow package installs and builds routinely outlive this wait. ' +
+            'Do not assume failure and do not blindly restart it: end your turn, tell the user it is still ' +
+            'running and to watch the Terminal tab, then verify in the next turn with a cheap check ' +
+            '(for example `ls node_modules` after an install). The server runs one command at a time, ' +
+            'so any command sent while this one runs will queue until it finishes.',
+          exitCode: 124,
+          durationMs: Date.now() - started,
+          timedOut: false,
+          truncated: false,
+        };
+      }
+      throw error;
     }
-
-    const data = (result.data ?? {}) as {
-      stdout?: string;
-      stderr?: string;
-      exitCode?: number;
-      timedOut?: boolean;
-      truncated?: boolean;
-    };
-
-    return {
-      stdout: redactText(data.stdout ?? ''),
-      stderr: redactText(data.stderr ?? ''),
-      exitCode: data.exitCode ?? 0,
-      durationMs: Date.now() - started,
-      timedOut: Boolean(data.timedOut),
-      truncated: Boolean(data.truncated),
-    };
   }
 
   async *streamTerminal(
@@ -374,11 +407,15 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
 
   async downloadFile(id: string, path: string): Promise<Buffer> {
     const { workerId, externalId } = await this.route(id);
-    const result = await dispatch(workerId, {
-      kind: 'read_file',
-      sandboxExternalId: externalId,
-      path: normalizeWorkspacePath(path),
-    });
+    const result = await dispatch(
+      workerId,
+      {
+        kind: 'read_file',
+        sandboxExternalId: externalId,
+        path: normalizeWorkspacePath(path),
+      },
+      inTurnWaitMs(DEFAULT_COMMAND_TIMEOUT_MS),
+    );
     if (!result.ok) {
       throw new SandboxError('not_found', result.error ?? `Could not read ${path}.`, {
         status: 404,
@@ -390,11 +427,15 @@ export class RemoteDockerSandboxProvider implements SandboxProvider {
 
   async listFiles(id: string, path: string): Promise<FileEntry[]> {
     const { workerId, externalId } = await this.route(id);
-    const result = await dispatch(workerId, {
-      kind: 'list_files',
-      sandboxExternalId: externalId,
-      path: path === '.' ? '' : normalizeWorkspacePath(path),
-    });
+    const result = await dispatch(
+      workerId,
+      {
+        kind: 'list_files',
+        sandboxExternalId: externalId,
+        path: path === '.' ? '' : normalizeWorkspacePath(path),
+      },
+      inTurnWaitMs(DEFAULT_COMMAND_TIMEOUT_MS),
+    );
     if (!result.ok) return [];
 
     const entries = (result.data ?? []) as Array<{
@@ -462,6 +503,20 @@ function absolute(path: string): string {
 /** The container name on the worker — a pure function of the sandbox id. */
 function externalIdFor(sandboxId: string): string {
   return `karo-${sandboxId.slice(-16)}`;
+}
+
+/**
+ * Ceiling on how long one agent-turn tool call may wait for a worker result.
+ * The turn runs inside a single serverless function; when that function hits
+ * the platform duration cap it is killed without an error ever reaching the
+ * browser, which is how the UI ended up spinning forever on a slow install.
+ * Every in-turn wait stays comfortably under the cap, and a wait that gives
+ * up reports a still-running command the model can check on next turn.
+ */
+const MAX_IN_TURN_WAIT_MS = 115_000;
+
+function inTurnWaitMs(requestedMs: number): number {
+  return Math.min(requestedMs, MAX_IN_TURN_WAIT_MS);
 }
 
 function isRuntimeStatus(value: unknown): value is SandboxRuntimeStatus {

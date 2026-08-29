@@ -6,6 +6,7 @@ import { syncProviderCatalogs } from '@/lib/ai/catalog-sync';
 import { sweepAutoTopups } from '@/lib/billing/auto-topup';
 import { applyDuePlanChanges } from '@/lib/billing/plan-changes';
 import { sweepIdleSandboxes } from '@/lib/sandbox/service';
+import { sweepStaleWorkerCommands } from '@/lib/sandbox/worker-bus';
 
 /**
  * Run every periodic maintenance sweep in one call.
@@ -87,6 +88,13 @@ export const GET = defineHandler(
     await run('catalog-sync', async () => {
       const result = await syncProviderCatalogs({ onlyConfigured: true });
       return `${result.changes.length} changes, ${result.errors.length} errors across ${result.syncedProviders} providers`;
+    });
+
+    // Commands a worker claimed but never finished (the machine went to sleep
+    // mid-exec, Wi-Fi dropped). Left alone they stay `claimed` forever.
+    await run('worker-command-reaper', async () => {
+      const result = await sweepStaleWorkerCommands();
+      return `${result.reaped} reaped`;
     });
 
     const failedCount = jobs.filter((job) => !job.ok).length;
