@@ -56,7 +56,7 @@ import {
 } from 'node:os';
 import { join } from 'node:path';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const CONFIG_DIR = join(homedir(), '.karo');
 const CONFIG_PATH = join(CONFIG_DIR, 'worker.json');
 
@@ -69,12 +69,13 @@ const POLL_ERROR_BACKOFF_MAX_MS = 60_000;
  * ------------------------------------------------------------------ */
 
 function parseArgs(argv) {
-  const args = { dryRun: false, registerOnly: false, verbose: false };
+  const args = { dryRun: false, registerOnly: false, verbose: false, dns: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--token') args.token = argv[++i];
     else if (arg === '--url') args.url = argv[++i];
     else if (arg === '--name') args.name = argv[++i];
+    else if (arg === '--dns') args.dns.push(argv[++i]);
     else if (arg === '--dry-run') args.dryRun = true;
     else if (arg === '--register-only') args.registerOnly = true;
     else if (arg === '--verbose' || arg === '-v') args.verbose = true;
@@ -100,6 +101,8 @@ function usage() {
       '                   and exit. Used by the one-command installer so the service',
       '                   itself never needs a token argument.',
       '  --dry-run        Simulate execution instead of running Docker.',
+      '  --dns SERVER     DNS server for sandbox containers, repeatable. Use when',
+      '                   installs fail with npm error EAI_AGAIN — e.g. --dns 1.1.1.1',
       '  --verbose        Log every command received.',
       '',
       'The worker connects outbound only. It never opens a port.',
@@ -135,6 +138,15 @@ function saveConfig(config) {
  * ------------------------------------------------------------------ */
 
 let verbose = false;
+/**
+ * DNS servers handed to sandbox containers via `--dns`. Off by default: a
+ * container inherits the daemon's resolver chain, which on hosts running
+ * systemd-resolved degenerates to a fallback public resolver that is slow or
+ * unreachable on some home networks — npm then dies with `EAI_AGAIN` after
+ * minutes of silent retries. `--dns 1.1.1.1 --dns 8.8.8.8` (or the KARO_DNS
+ * env var, comma-separated) pins resolvers that actually answer.
+ */
+let dnsServers = [];
 
 function log(level, message, extra) {
   const line = `${new Date().toISOString()} ${level.toUpperCase().padEnd(5)} ${message}`;
@@ -352,6 +364,7 @@ function hardeningFlags(command) {
     '10001:10001',
     '--workdir',
     WORKSPACE,
+    ...dnsServers.flatMap((server) => ['--dns', server]),
     ...(command.networkPolicy === 'none' ? ['--network', 'none'] : []),
   ];
 }
@@ -801,6 +814,12 @@ async function run(ctx) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   verbose = args.verbose;
+  dnsServers = args.dns.length
+    ? args.dns
+    : (process.env.KARO_DNS ?? '')
+        .split(',')
+        .map((server) => server.trim())
+        .filter(Boolean);
 
   if (args.help) {
     usage();
