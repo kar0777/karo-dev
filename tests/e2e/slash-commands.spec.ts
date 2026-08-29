@@ -41,7 +41,10 @@ test.describe('slash commands', () => {
   // They failed identically before the catalogue/estimator changes — verified
   // against the baseline run of 2026-08-28 15:25. Root cause lives in dev-server
   // timing, not the specs; revisit by running CI against `next start`.
-  test.skip(Boolean(process.env.CI), 'CI dev-server timing: hydration + composer races, passes locally');
+  test.skip(
+    Boolean(process.env.CI),
+    'CI dev-server timing: hydration + composer races, passes locally',
+  );
   test.beforeEach(async ({ page }) => {
     await openWorkspace(page);
   });
