@@ -197,6 +197,10 @@ jobs:
       SANDBOX_PROVIDER: mock
       EMAIL_TRANSPORT: console
       APP_URL: http://localhost:3000
+      # `next start` boots with NODE_ENV=production, where the instrumentation
+      # hook refuses to run without an encryption key. A fixed test-only key
+      # (base64 of 32 'a' bytes) — no real data is ever encrypted here.
+      ENCRYPTION_KEY: 'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE='
 
     steps:
       - uses: actions/checkout@v5
