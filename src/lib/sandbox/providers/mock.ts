@@ -45,9 +45,57 @@ type MockInstance = {
   cwd: string;
   history: string[];
   processes: Set<string>;
+  /** Binaries "installed" by the simulated package managers: bin → version. */
+  installedBins: Map<string, string>;
 };
 
-const instances = new Map<string, MockInstance>();
+/**
+ * Simulator state survives hot-reload by living on `globalThis` — a dev-server
+ * recompile must not wipe the user's simulated machines mid-session. A full
+ * process restart still starts from zero, which `lookup` handles by rebuilding
+ * from the remembered creation options.
+ */
+type MockStore = {
+  instances: Map<string, MockInstance>;
+  instanceOptions: Map<string, CreateSandboxOptions>;
+  destroyed: Set<string>;
+};
+
+const store = ((globalThis as { __karoMockStore?: MockStore }).__karoMockStore ??= {
+  instances: new Map<string, MockInstance>(),
+  instanceOptions: new Map<string, CreateSandboxOptions>(),
+  destroyed: new Set<string>(),
+});
+
+function makeInstance(options: CreateSandboxOptions): MockInstance {
+  const files = new Map<string, MockFile>();
+  const now = new Date();
+
+  files.set('', { content: '', isDirectory: true, modifiedAt: now, mode: 0o755 });
+  for (const [path, content] of Object.entries(DEFAULT_TREE)) {
+    files.set(path, { content, isDirectory: false, modifiedAt: now, mode: 0o644 });
+  }
+  for (const file of options.initialFiles ?? []) {
+    writeInto(files, file.path, decodeInput(file), now);
+  }
+
+  return {
+    id: options.sandboxId,
+    externalId: `mock-${options.sandboxId.slice(-12)}`,
+    status: 'running',
+    createdAt: now,
+    startedAt: now,
+    cpuCores: options.cpuCores,
+    memoryMb: options.memoryMb,
+    diskGb: options.diskGb,
+    env: { ...options.env, HOME: '/home/karo', PWD: WORKSPACE_ROOT, USER: 'karo' },
+    files,
+    cwd: WORKSPACE_ROOT,
+    history: [],
+    processes: new Set(),
+    installedBins: new Map(),
+  };
+}
 
 const DEFAULT_TREE: Record<string, string> = {
   'README.md':
@@ -77,34 +125,10 @@ export class MockSandboxProvider implements SandboxProvider {
   }
 
   async createSandbox(options: CreateSandboxOptions): Promise<Sandbox> {
-    const files = new Map<string, MockFile>();
-    const now = new Date();
-
-    files.set('', { content: '', isDirectory: true, modifiedAt: now, mode: 0o755 });
-    for (const [path, content] of Object.entries(DEFAULT_TREE)) {
-      files.set(path, { content, isDirectory: false, modifiedAt: now, mode: 0o644 });
-    }
-    for (const file of options.initialFiles ?? []) {
-      writeInto(files, file.path, decodeInput(file), now);
-    }
-
-    const instance: MockInstance = {
-      id: options.sandboxId,
-      externalId: `mock-${options.sandboxId.slice(-12)}`,
-      status: 'running',
-      createdAt: now,
-      startedAt: now,
-      cpuCores: options.cpuCores,
-      memoryMb: options.memoryMb,
-      diskGb: options.diskGb,
-      env: { ...options.env, HOME: '/home/karo', PWD: WORKSPACE_ROOT, USER: 'karo' },
-      files,
-      cwd: WORKSPACE_ROOT,
-      history: [],
-      processes: new Set(),
-    };
-
-    instances.set(options.sandboxId, instance);
+    const instance = makeInstance(options);
+    store.instances.set(options.sandboxId, instance);
+    store.instanceOptions.set(options.sandboxId, options);
+    store.destroyed.delete(options.sandboxId);
 
     return {
       id: options.sandboxId,
@@ -112,7 +136,7 @@ export class MockSandboxProvider implements SandboxProvider {
       provider: 'mock',
       status: 'running',
       workspacePath: WORKSPACE_ROOT,
-      createdAt: now,
+      createdAt: instance.createdAt,
       exposedPorts: { 3000: `https://preview.karo.local/${instance.externalId}` },
       metadata: { simulated: true },
     };
@@ -131,11 +155,15 @@ export class MockSandboxProvider implements SandboxProvider {
   }
 
   async destroySandbox(id: string): Promise<void> {
-    instances.delete(id);
+    store.instances.delete(id);
+    store.instanceOptions.delete(id);
+    // A tombstone so a later execute/metrics call cannot silently resurrect
+    // what the user explicitly destroyed.
+    store.destroyed.add(id);
   }
 
   async getStatus(id: string): Promise<SandboxRuntimeStatus> {
-    return instances.get(id)?.status ?? 'destroyed';
+    return this.lookup(id)?.status ?? 'destroyed';
   }
 
   async execute(id: string, command: ExecuteCommand): Promise<ExecutionResult> {
@@ -163,10 +191,17 @@ export class MockSandboxProvider implements SandboxProvider {
     id: string,
     options: TerminalStreamOptions,
   ): AsyncIterable<TerminalChunk> {
-    const instance = instances.get(id);
+    const instance = this.lookup(id);
     if (!instance) {
       yield { type: 'error', message: 'Sandbox not found.' };
       return;
+    }
+    if (instance.startedAt && Date.now() - instance.startedAt.getTime() < 5_000) {
+      // Fresh or resurrected machine — tell the user why the old screen is gone.
+      yield {
+        type: 'stdout',
+        data: `\x1b[2m[restored] The simulated machine was rebuilt after a restart; earlier state is gone.\x1b[0m\r\n`,
+      };
     }
 
     yield { type: 'status', status: instance.status, message: 'Attached to simulated shell.' };
@@ -233,7 +268,7 @@ export class MockSandboxProvider implements SandboxProvider {
   async killTerminal(id: string, sessionId: string): Promise<void> {
     const queue = queueFor(id, sessionId);
     queue.push({ type: 'stdout', data: '\r\n\x1b[33m^C\x1b[0m\r\n' });
-    const instance = instances.get(id);
+    const instance = store.instances.get(id);
     if (instance) {
       instance.processes.clear();
       queue.push({ type: 'stdout', data: prompt(instance) });
@@ -327,8 +362,29 @@ export class MockSandboxProvider implements SandboxProvider {
     };
   }
 
+  /**
+   * Looks the instance up, resurrecting a lost simulated machine when possible.
+   *
+   * The simulator lives in process memory, so a dev-server restart or a host
+   * sleep wipes every instance while the database row still says `running`.
+   * A real container would survive its host process; recreating the machine
+   * here keeps the workspace from turning into a zombie after a restart.
+   * Explicitly destroyed sandboxes stay dead.
+   */
+  private lookup(id: string): MockInstance | null {
+    const existing = store.instances.get(id);
+    if (existing) return existing;
+    if (store.destroyed.has(id)) return null;
+
+    const options = store.instanceOptions.get(id);
+    if (!options) return null;
+    const instance = makeInstance(options);
+    store.instances.set(id, instance);
+    return instance;
+  }
+
   private require(id: string): MockInstance {
-    const instance = instances.get(id);
+    const instance = this.lookup(id);
     if (!instance) {
       throw new SandboxError('not_found', 'This sandbox no longer exists.', { status: 404 });
     }
@@ -593,8 +649,37 @@ function runSingle(instance: MockInstance, input: string): ShellResult {
     case 'npm':
     case 'pnpm':
     case 'yarn':
-    case 'bun':
+    case 'bun': {
+      // `install -g <pkg>` mutates the simulated image so the CLI-agents
+      // installer can probe `command -v <bin>` afterwards, like a real box.
+      const isGlobalInstall =
+        (args[0] === 'install' || args[0] === 'i' || args[0] === 'add') &&
+        args.slice(1).includes('-g');
+      if (isGlobalInstall) {
+        const packages = args.slice(1).filter((a) => !a.startsWith('-'));
+        for (const pkg of packages) registerSimulatedInstall(instance, pkg);
+        return out(
+          [
+            `added ${packages.length} package${packages.length === 1 ? '' : 's'} in 3s`,
+            '',
+            'found 0 vulnerabilities',
+            '[simulated]',
+          ].join('\n'),
+        );
+      }
       return simulatePackageManager(cmd, args);
+    }
+
+    case 'command':
+    case 'which': {
+      // `command -v <bin>` — how the installer verifies a tool landed on PATH.
+      const bin = args.find((a) => !a.startsWith('-'));
+      if (!bin) return out('');
+      if (instance.installedBins.has(bin)) {
+        return out(`/usr/local/bin/${bin}`);
+      }
+      return { stdout: '', stderr: '', exitCode: 1 };
+    }
 
     case 'node':
       return out(args.length ? `[simulated] executed ${args[0]}` : 'v22.14.0');
@@ -604,18 +689,34 @@ function runSingle(instance: MockInstance, input: string): ShellResult {
       return out(args.length ? `[simulated] executed ${args.join(' ')}` : 'Python 3.12.7');
 
     case 'pip':
-    case 'pip3':
-      return out(
-        args[0] === 'install'
-          ? `Collecting ${args.slice(1).join(' ')}\nSuccessfully installed ${args.slice(1).join(' ')} [simulated]`
-          : 'pip 24.2',
-      );
+    case 'pip3': {
+      if (args[0] === 'install') {
+        const packages = args.slice(1).filter((a) => !a.startsWith('-'));
+        for (const pkg of packages) {
+          if (pkg === 'aider-install') {
+            registerSimulatedInstall(instance, 'aider');
+          }
+        }
+        return out(
+          `Collecting ${packages.join(' ')}\nSuccessfully installed ${packages.join(' ')} [simulated]`,
+        );
+      }
+      return out('pip 24.2');
+    }
 
     case 'curl':
-    case 'wget':
+    case 'wget': {
+      // The Goose installer pipes a vendor script straight into bash; in the
+      // simulator the download "succeeds" and lands the binary on PATH.
+      const url = args.find((a) => a.startsWith('https://')) ?? '';
+      if (url.includes('goose') && url.endsWith('download_cli.sh')) {
+        registerSimulatedInstall(instance, 'goose');
+        return out('[simulated] goose installed to /usr/local/bin/goose');
+      }
       return fail(
         `${cmd}: network access is disabled in the demo sandbox. Connect a real sandbox provider to reach the internet.`,
       );
+    }
 
     case 'docker':
       return fail(
@@ -625,8 +726,20 @@ function runSingle(instance: MockInstance, input: string): ShellResult {
     case 'sudo':
       return fail('sudo: this incident will not be reported — the demo sandbox has no root.');
 
-    default:
+    default: {
+      // A binary "installed" earlier in this simulated image answers like the
+      // real CLI would — at least well enough for version probes and launch.
+      const version = instance.installedBins.get(cmd);
+      if (version !== undefined) {
+        if (args.some((a) => a === '--version' || a === '-v' || a === 'version')) {
+          return out(`${cmd} ${version} [simulated]`);
+        }
+        return out(
+          `[simulated] ${cmd} started — connect a real sandbox provider to run ${cmd} for real.`,
+        );
+      }
       return fail(`${cmd}: command not found`);
+    }
   }
 }
 
@@ -825,6 +938,21 @@ function releaseQueue(sandboxId: string, sessionId: string) {
  *  Helpers
  * ------------------------------------------------------------------ */
 
+/** Popular coding-agent packages whose real binary name differs from the package name. */
+const SIMULATED_PACKAGE_BINS: Record<string, string> = {
+  '@anthropic-ai/claude-code': 'claude',
+  '@openai/codex': 'codex',
+  '@google/gemini-cli': 'gemini',
+  'opencode-ai': 'opencode',
+  '@charmland/crush': 'crush',
+  '@qwen-code/qwen-code': 'qwen',
+};
+
+function registerSimulatedInstall(instance: MockInstance, pkg: string): void {
+  const bin = SIMULATED_PACKAGE_BINS[pkg] ?? pkg.split('/').pop() ?? pkg;
+  if (bin) instance.installedBins.set(bin, '1.0.0');
+}
+
 function out(stdout: string): ShellResult {
   return { stdout: stdout ? `${stdout}\n` : '', stderr: '', exitCode: 0 };
 }
@@ -944,6 +1072,8 @@ function delay(ms: number): Promise<void> {
 
 /** Test helper — clears all simulated instances. */
 export function __resetMockSandboxes(): void {
-  instances.clear();
+  store.instances.clear();
+  store.instanceOptions.clear();
+  store.destroyed.clear();
   queues.clear();
 }

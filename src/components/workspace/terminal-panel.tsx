@@ -3,7 +3,16 @@
 import '@xterm/xterm/css/xterm.css';
 
 import type { ITheme, Terminal } from '@xterm/xterm';
-import { Check, Eraser, Pencil, Plus, Search, SquareTerminal, X } from 'lucide-react';
+import {
+  Check,
+  Eraser,
+  PackagePlus,
+  Pencil,
+  Plus,
+  Search,
+  SquareTerminal,
+  X,
+} from 'lucide-react';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 
@@ -25,6 +34,7 @@ import type { ShellKind } from '@/lib/db/schema';
 import type { TerminalChunk } from '@/lib/sandbox/types';
 import { cn } from '@/lib/utils';
 
+import { CliAgentsDialog } from './cli-agents-dialog';
 import { oklchToHex } from './monaco-theme';
 import { SandboxBanner } from './sandbox-banner';
 import type { WorkspaceTerminalSeed } from './types';
@@ -506,6 +516,14 @@ export function TerminalPanel() {
   const [creating, setCreating] = React.useState(false);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState('');
+  const [cliDialogOpen, setCliDialogOpen] = React.useState(false);
+  // A command queued for a specific session, created for it — the CLI-agents
+  // installer "types" into the session it just opened once the pty is ready.
+  const [pendingInject, setPendingInject] = React.useState<{
+    sessionId: string;
+    command: string;
+    nonce: number;
+  } | null>(null);
 
   const canUse = data.capabilities.canUseTerminal;
   const running = sandbox?.status === 'running';
@@ -524,40 +542,53 @@ export function TerminalPanel() {
     );
   }, []);
 
-  const createSession = React.useCallback(async () => {
-    if (!sandbox) {
-      notify('warning', 'Start a sandbox first.', 'A terminal needs a running machine.');
-      return;
-    }
-    setCreating(true);
-    try {
-      const payload = await apiFetch<{ sessionId: string; title?: string }>('/api/terminal', {
-        json: {
-          sandboxId: sandbox.id,
-          projectId: data.project.id,
+  const createSession = React.useCallback(
+    async (options?: { title?: string; command?: string }) => {
+      if (!sandbox) {
+        notify('warning', 'Start a sandbox first.', 'A terminal needs a running machine.');
+        return;
+      }
+      setCreating(true);
+      try {
+        const payload = await apiFetch<{ sessionId: string; title?: string }>('/api/terminal', {
+          json: {
+            sandboxId: sandbox.id,
+            projectId: data.project.id,
+            shell,
+            cols: 100,
+            rows: 28,
+            ...(options?.title ? { title: options.title } : {}),
+          },
+        });
+        const session: SessionState = {
+          id: payload.sessionId,
+          title:
+            payload.title ?? options?.title ?? `${SHELL_LABEL[shell]} ${sessions.length + 1}`,
           shell,
-          cols: 100,
-          rows: 28,
-        },
-      });
-      const session: SessionState = {
-        id: payload.sessionId,
-        title: payload.title ?? `${SHELL_LABEL[shell]} ${sessions.length + 1}`,
-        shell,
-        cwd: '/workspace',
-        scrollback: '',
-        history: [],
-        status: 'connecting',
-        exitCode: null,
-      };
-      setSessions((prev) => [...prev, session]);
-      setActiveId(session.id);
-    } catch (error) {
-      notify('error', 'Could not open a terminal', describeError(error).message);
-    } finally {
-      setCreating(false);
-    }
-  }, [data.project.id, notify, sandbox, sessions.length, shell]);
+          cwd: '/workspace',
+          scrollback: '',
+          history: [],
+          status: 'connecting',
+          exitCode: null,
+        };
+        setSessions((prev) => [...prev, session]);
+        setActiveId(session.id);
+        if (options?.command) {
+          setPendingInject((prev) => ({
+            sessionId: payload.sessionId,
+            command: options.command!,
+            nonce: (prev?.nonce ?? 0) + 1,
+          }));
+        }
+        return session.id;
+      } catch (error) {
+        notify('error', 'Could not open a terminal', describeError(error).message);
+      } finally {
+        setCreating(false);
+      }
+    },
+    [data.project.id, notify, sandbox, sessions.length, shell],
+  );
 
   const closeSession = React.useCallback((id: string) => {
     void apiFetch(`/api/terminal/${id}/kill`, { json: {} }).catch(() => {
@@ -570,7 +601,16 @@ export function TerminalPanel() {
       );
       return next;
     });
+    setPendingInject((prev) => (prev?.sessionId === id ? null : prev));
   }, []);
+
+  /** Opens a dedicated, titled session and "types" the command into it. */
+  const sendToTerminal = React.useCallback(
+    (title: string, command: string) => {
+      void createSession({ title, command });
+    },
+    [createSession],
+  );
 
   // Open the first terminal automatically once there is a machine to run it on.
   // The request is started from a microtask rather than from the effect body,
@@ -721,6 +761,24 @@ export function TerminalPanel() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1.5 text-[12px]"
+                disabled={!running}
+                onClick={() => setCliDialogOpen(true)}
+              >
+                <PackagePlus className="size-3.5" />
+                CLI agents
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Install Claude Code, Codex, Gemini CLI and friends into this sandbox
+            </TooltipContent>
+          </Tooltip>
+
           <Select value={shell} onValueChange={(value) => setShell(value as ShellKind)}>
             <SelectTrigger size="sm" className="w-36" aria-label="Shell">
               <SelectValue />
@@ -803,18 +861,29 @@ export function TerminalPanel() {
             />
           </div>
         ) : (
-          sessions.map((session) => (
-            <TerminalView
-              key={session.id}
-              session={session}
-              active={session.id === activeId}
-              onStatus={onStatus}
-              onExit={onExit}
-              injected={session.id === activeId ? terminalRequest : null}
-            />
-          ))
+          sessions.map((session) => {
+            const queued = pendingInject?.sessionId === session.id ? pendingInject : null;
+            return (
+              <TerminalView
+                key={session.id}
+                session={session}
+                active={session.id === activeId}
+                onStatus={onStatus}
+                onExit={onExit}
+                injected={queued ?? (session.id === activeId ? terminalRequest : null)}
+              />
+            );
+          })
         )}
       </div>
+
+      <CliAgentsDialog
+        open={cliDialogOpen}
+        onOpenChange={setCliDialogOpen}
+        sandboxId={sandbox?.id ?? null}
+        sandboxRunning={running}
+        onSendToTerminal={sendToTerminal}
+      />
     </div>
   );
 }

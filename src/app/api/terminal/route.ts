@@ -2,16 +2,13 @@ import { and, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { serializeTerminalSession } from '@/app/api/_shared/route-helpers';
+import { openTerminalSession } from '@/app/api/_shared/terminal-open';
 import { requireSandboxAccess } from '@/app/api/_shared/sandbox-access';
-import { ConflictError } from '@/lib/api/errors';
 import { defineHandler } from '@/lib/api/handler';
 import { created, json } from '@/lib/api/responses';
 import { requireApiProjectAccess } from '@/lib/auth/guards';
 import { db } from '@/lib/db';
 import { terminalSessions } from '@/lib/db/schema';
-import { ID_PREFIX, newId } from '@/lib/ids';
-import { startSandbox } from '@/lib/sandbox/service';
-import { loadBillingContext } from '@/lib/usage/metering';
 
 /**
  * `/api/terminal` — open a shell, or list the ones already open.
@@ -74,52 +71,22 @@ export const POST = defineHandler(
   { auth: 'required', body: createBody },
   async ({ body, user }) => {
     const access = await requireSandboxAccess(body.sandboxId, 'terminal.use');
-
     const shell = body.shell ?? access.project?.defaultShell ?? 'bash';
 
-    // Shells are a plan capability: `powershell` on a Linux sandbox needs an
-    // image the smaller tiers do not get.
-    const billing = await loadBillingContext(access.team.id);
-    const allowedShells = billing.plan.allowedShells ?? ['bash'];
-    if (!allowedShells.includes(shell)) {
-      throw new ConflictError(
-        `The ${billing.plan.name} plan does not include the ${shell} shell.`,
-        {
-          title: 'Shell not available',
-          description: `This plan can use: ${allowedShells.join(', ')}. Pick one of those, or upgrade to unlock more.`,
-          details: { allowedShells },
-        },
-      );
-    }
-
-    // Opening a terminal is an unambiguous request for a machine.
-    if (access.sandbox.status === 'sleeping' || access.sandbox.status === 'stopped') {
-      await startSandbox(access.sandbox.id, { userId: user.id, reason: 'terminal' });
-    }
-
-    const sessionId = newId(ID_PREFIX.terminalSession);
-    const inserted = await db
-      .insert(terminalSessions)
-      .values({
-        id: sessionId,
-        sandboxId: access.sandbox.id,
-        projectId: body.projectId ?? access.sandbox.projectId,
-        userId: user.id,
-        title: body.title ?? 'Terminal',
-        shell,
-        cwd: body.cwd ?? '/workspace',
-        cols: body.cols ?? 80,
-        rows: body.rows ?? 24,
-        isActive: true,
-      })
-      .returning();
-
-    const session = inserted[0];
-    if (!session) throw new Error('The terminal session could not be created.');
+    const session = await openTerminalSession({
+      sandbox: access.sandbox,
+      project: access.project,
+      user,
+      shell,
+      title: body.title,
+      cols: body.cols,
+      rows: body.rows,
+      cwd: body.cwd,
+    });
 
     return created({
       sessionId: session.id,
-      session: serializeTerminalSession(session),
+      title: session.title,
     });
   },
 );

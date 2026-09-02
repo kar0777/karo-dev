@@ -53,12 +53,14 @@ Open <http://localhost:3000> and sign in as `demo@karo.local` / `karo-demo-2025`
 estimator, features, docs, security, about, terms, privacy.
 
 **Product** — dashboard, projects, an IDE-style agent workspace (chat, code, preview, terminal,
-tasks, changes), sandbox management, MCP servers, a skills system, a plugin marketplace, usage
+tasks, changes), sandbox management, MCP servers, a skills system, a plugin marketplace, a CLI
+agents catalogue (install Claude Code, Codex, Gemini CLI and friends into a sandbox or onto your
+own machine — Karo ships no vendor code and proprietary tools use your own account or key), usage
 analytics, billing, API keys, team management, settings.
 
-**Admin** — plans, model catalogue, providers, sandboxes, platform usage, unit economics,
-incidents and the audit log. Every quota and price in the product is a row in the database,
-editable from `/admin`, never hard-coded in a component.
+**Admin** — plans, model catalogue, providers, sandboxes, the CLI agents catalogue, platform
+usage, unit economics, incidents and the audit log. Every quota and price in the product is a row
+in the database, editable from `/admin`, never hard-coded in a component.
 
 ---
 

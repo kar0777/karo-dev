@@ -33,6 +33,7 @@ import { calculateWeightedTokens, type TokenPrices } from '@/lib/pricing/weighte
 import * as schema from './schema';
 import {
   ADMIN_SETTING_SEEDS,
+  CLI_TOOL_SEEDS,
   DEFAULT_MODEL_SLUG,
   MCP_TEMPLATES_SETTING_KEY,
   MCP_TEMPLATE_SEEDS,
@@ -500,6 +501,51 @@ async function seedPlugins(): Promise<Map<string, string>> {
     ids.set(seed.key, required(row, `plugin ${seed.key} was not returned`).id);
   }
   return ids;
+}
+
+/**
+ * Upserts the installable CLI agent catalogue on its slug. `isEnabled` is
+ * operator state — a seed run never re-enables a tool the admin turned off.
+ */
+async function seedCliTools(): Promise<number> {
+  for (const seed of CLI_TOOL_SEEDS) {
+    await db
+      .insert(schema.cliTools)
+      .values({
+        ...seed,
+        id: newId(ID_PREFIX.cliTool),
+        versionArg: seed.versionArg ?? '--version',
+        authNote: seed.authNote ?? '',
+        apiKeyEnvVar: seed.apiKeyEnvVar ?? null,
+        apiKeyProviderKey: seed.apiKeyProviderKey ?? null,
+        licenseUrl: seed.licenseUrl ?? null,
+        docsUrl: seed.docsUrl ?? null,
+        sortOrder: seed.sortOrder ?? 100,
+      })
+      .onConflictDoUpdate({
+        target: schema.cliTools.slug,
+        set: {
+          name: seed.name,
+          vendor: seed.vendor,
+          description: seed.description,
+          license: seed.license,
+          licenseKind: seed.licenseKind,
+          licenseUrl: seed.licenseUrl ?? null,
+          docsUrl: seed.docsUrl ?? null,
+          authKind: seed.authKind,
+          authNote: seed.authNote ?? '',
+          apiKeyEnvVar: seed.apiKeyEnvVar ?? null,
+          apiKeyProviderKey: seed.apiKeyProviderKey ?? null,
+          binName: seed.binName,
+          versionArg: seed.versionArg ?? '--version',
+          installCommands: seed.installCommands,
+          launchCommand: seed.launchCommand,
+          sortOrder: seed.sortOrder ?? 100,
+          updatedAt: new Date(),
+        },
+      });
+  }
+  return CLI_TOOL_SEEDS.length;
 }
 
 async function seedAdminSettings(): Promise<number> {
@@ -2422,6 +2468,9 @@ async function main(): Promise<void> {
 
   const pluginIds = await seedPlugins();
   console.log(`  · plugins          ${pluginIds.size}`);
+
+  const cliToolIds = await seedCliTools();
+  console.log(`  · cli tools        ${cliToolIds}`);
 
   const settingCount = await seedAdminSettings();
   console.log(

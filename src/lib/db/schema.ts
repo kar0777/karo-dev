@@ -203,6 +203,26 @@ export const fileChangeKindEnum = pgEnum('file_change_kind', [
   'renamed',
 ]);
 
+/** How a CLI coding agent authenticates the person driving it. */
+export const cliAuthKindEnum = pgEnum('cli_auth_kind', [
+  /** Interactive OAuth/login flow inside the terminal (`/login` and friends). */
+  'login',
+  /** An API key from the user's vault, injected as an environment variable. */
+  'api_key',
+  /** Nothing to configure before first use. */
+  'none',
+]);
+
+/** License posture of an installable CLI agent. */
+export const cliLicenseKindEnum = pgEnum('cli_license_kind', ['free', 'proprietary']);
+
+/** Result of the last "is this installed?" probe on a sandbox. */
+export const cliInstallStatusEnum = pgEnum('cli_install_status', [
+  'installed',
+  'missing',
+  'unknown',
+]);
+
 /* ------------------------------------------------------------------ *
  *  Identity
  * ------------------------------------------------------------------ */
@@ -1411,6 +1431,81 @@ export const installedSkills = pgTable(
   (t) => [
     index('installed_skills_team_idx').on(t.teamId),
     uniqueIndex('installed_skills_unique').on(t.teamId, t.skillId, t.projectId),
+  ],
+);
+
+/* ------------------------------------------------------------------ *
+ *  Installable CLI coding agents ("terminals by license")
+ * ------------------------------------------------------------------ */
+
+/**
+ * Catalogue of third-party terminal coding agents a user can install — into a
+ * Karo sandbox, or onto their own machine using the same official commands.
+ * Karo never redistributes these tools: install commands point at the vendor's
+ * own package registry or installer, and proprietary tools authenticate with
+ * the user's own account or license key inside the terminal.
+ *
+ * Every row is admin-editable from `/admin/cli-tools` like the rest of the
+ * catalogue — nothing here is hard-coded in a component.
+ */
+export const cliTools = pgTable(
+  'cli_tools',
+  {
+    id: id(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    vendor: text('vendor').notNull().default(''),
+    description: text('description').notNull().default(''),
+    /** SPDX identifier or short license label shown on the card. */
+    license: text('license').notNull().default(''),
+    licenseKind: cliLicenseKindEnum('license_kind').notNull().default('free'),
+    licenseUrl: text('license_url'),
+    docsUrl: text('docs_url'),
+    authKind: cliAuthKindEnum('auth_kind').notNull().default('none'),
+    /** One-line hint shown when launching, e.g. "run /login inside the terminal". */
+    authNote: text('auth_note').notNull().default(''),
+    /** Environment variable the tool reads, when `auth_kind` is `api_key`. */
+    apiKeyEnvVar: text('api_key_env_var'),
+    /** Provider key matched against the user's BYOK vault entries. */
+    apiKeyProviderKey: text('api_key_provider_key'),
+    /** Binary probed by the install check (`command -v <binName>`). */
+    binName: text('bin_name').notNull(),
+    versionArg: text('version_arg').notNull().default('--version'),
+    installCommands: jsonb('install_commands')
+      .$type<{ sandbox: string; macos: string; linux: string; windows: string }>()
+      .notNull(),
+    launchCommand: text('launch_command').notNull().default(''),
+    isEnabled: boolean('is_enabled').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(100),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('cli_tools_slug_unique').on(t.slug)],
+);
+
+/** Per-sandbox install state for a CLI tool, updated by the check probe. */
+export const sandboxCliInstalls = pgTable(
+  'sandbox_cli_installs',
+  {
+    id: id(),
+    sandboxId: text('sandbox_id')
+      .notNull()
+      .references(() => sandboxes.id, { onDelete: 'cascade' }),
+    toolId: text('tool_id')
+      .notNull()
+      .references(() => cliTools.id, { onDelete: 'cascade' }),
+    checkedById: text('checked_by_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    status: cliInstallStatusEnum('status').notNull().default('unknown'),
+    version: text('version'),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('sandbox_cli_installs_unique').on(t.sandboxId, t.toolId),
+    index('sandbox_cli_installs_tool_idx').on(t.toolId),
   ],
 );
 

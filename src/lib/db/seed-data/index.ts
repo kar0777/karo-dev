@@ -33,6 +33,8 @@ export {
 
 export { PLAN_SEEDS, type PlanSeed } from './plans';
 
+export { CLI_TOOL_SEEDS, type CliToolSeed } from './cli-tools';
+
 export { PLUGIN_SEEDS, type PluginSeed } from './plugins';
 
 export { SKILL_SEEDS, type SkillSeed } from './skills';

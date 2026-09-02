@@ -97,6 +97,9 @@ export const AUDIT_ACTIONS = {
   adminCatalogSync: 'admin.catalog_sync',
   adminCouponCreate: 'admin.coupon_create',
   adminCouponUpdate: 'admin.coupon_update',
+  adminCliToolCreate: 'admin.cli_tool_create',
+  adminCliToolUpdate: 'admin.cli_tool_update',
+  adminCliToolDelete: 'admin.cli_tool_delete',
 
   cronTick: 'cron.tick',
 
@@ -188,6 +191,9 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   'admin.catalog_sync': 'Model catalogue synced',
   'admin.coupon_create': 'Promo code created',
   'admin.coupon_update': 'Promo code updated',
+  'admin.cli_tool_create': 'CLI tool added to catalogue',
+  'admin.cli_tool_update': 'CLI tool updated',
+  'admin.cli_tool_delete': 'CLI tool removed from catalogue',
 
   'cron.tick': 'Scheduled maintenance tick',
 

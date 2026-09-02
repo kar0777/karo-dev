@@ -50,6 +50,13 @@
       "when": 1787989882945,
       "tag": "0006_pink_scream",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788283690273,
+      "tag": "0007_harsh_fallen_one",
+      "breakpoints": true
     }
   ]
 }

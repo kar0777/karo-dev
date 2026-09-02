@@ -51,6 +51,8 @@ export const ID_PREFIX = {
   task: 'tsk',
   coupon: 'cpn',
   couponRedemption: 'cpr',
+  cliTool: 'clt',
+  cliInstall: 'cli',
 } as const;
 
 export type IdPrefixKey = keyof typeof ID_PREFIX;
