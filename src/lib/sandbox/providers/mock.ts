@@ -55,19 +55,35 @@ type MockInstance = {
  * process restart still starts from zero, which `lookup` handles by rebuilding
  * from the remembered creation options.
  */
+/**
+ * The minimum the simulator needs to rebuild a machine from its database row
+ * after a full process restart, when the creation options are long gone.
+ */
+export type MockSnapshot = {
+  sandboxId: string;
+  cpuCores: number;
+  memoryMb: number;
+  diskGb: number;
+};
+
+type MockSeed = CreateSandboxOptions | MockSnapshot;
+
 type MockStore = {
   instances: Map<string, MockInstance>;
-  instanceOptions: Map<string, CreateSandboxOptions>;
+  instanceOptions: Map<string, MockSeed>;
   destroyed: Set<string>;
+  queues: Map<string, Queue>;
 };
 
 const store = ((globalThis as { __karoMockStore?: MockStore }).__karoMockStore ??= {
   instances: new Map<string, MockInstance>(),
-  instanceOptions: new Map<string, CreateSandboxOptions>(),
+  instanceOptions: new Map<string, MockSeed>(),
   destroyed: new Set<string>(),
+  queues: new Map<string, Queue>(),
 });
 
-function makeInstance(options: CreateSandboxOptions): MockInstance {
+function makeInstance(seed: MockSeed): MockInstance {
+  const { initialFiles, env } = seed as CreateSandboxOptions;
   const files = new Map<string, MockFile>();
   const now = new Date();
 
@@ -75,20 +91,20 @@ function makeInstance(options: CreateSandboxOptions): MockInstance {
   for (const [path, content] of Object.entries(DEFAULT_TREE)) {
     files.set(path, { content, isDirectory: false, modifiedAt: now, mode: 0o644 });
   }
-  for (const file of options.initialFiles ?? []) {
+  for (const file of initialFiles ?? []) {
     writeInto(files, file.path, decodeInput(file), now);
   }
 
   return {
-    id: options.sandboxId,
-    externalId: `mock-${options.sandboxId.slice(-12)}`,
+    id: seed.sandboxId,
+    externalId: `mock-${seed.sandboxId.slice(-12)}`,
     status: 'running',
     createdAt: now,
     startedAt: now,
-    cpuCores: options.cpuCores,
-    memoryMb: options.memoryMb,
-    diskGb: options.diskGb,
-    env: { ...options.env, HOME: '/home/karo', PWD: WORKSPACE_ROOT, USER: 'karo' },
+    cpuCores: seed.cpuCores,
+    memoryMb: seed.memoryMb,
+    diskGb: seed.diskGb,
+    env: { ...env, HOME: '/home/karo', PWD: WORKSPACE_ROOT, USER: 'karo' },
     files,
     cwd: WORKSPACE_ROOT,
     history: [],
@@ -216,9 +232,17 @@ export class MockSandboxProvider implements SandboxProvider {
     // Keep the stream open until the client aborts; input arrives via
     // `writeTerminal`, which pushes into this session's queue.
     const queue = queueFor(id, options.sessionId);
+    // `queue.next()` only resolves on a push or close, so a client disconnect
+    // would leave this generator suspended forever — skipping the finally
+    // block and losing everything the session produced since the last flush.
+    // Racing the signal wakes the loop on abort.
+    const aborted = new Promise<null>((resolve) => {
+      if (options.signal?.aborted) resolve(null);
+      else options.signal?.addEventListener('abort', () => resolve(null), { once: true });
+    });
     try {
       while (!options.signal?.aborted) {
-        const chunk = await queue.next();
+        const chunk = await Promise.race([queue.next(), aborted]);
         if (chunk === null) break;
         yield chunk;
       }
@@ -360,6 +384,19 @@ export class MockSandboxProvider implements SandboxProvider {
       networkRxBytes: 0,
       networkTxBytes: 0,
     };
+  }
+
+  /**
+   * Records what the database knows about this sandbox, so the simulator can
+   * rebuild it after a full process restart. `rehydrateProvider` calls this
+   * before every operation; a full creation record is never overwritten by
+   * the thinner row snapshot.
+   */
+  rememberSnapshot(snapshot: MockSnapshot): void {
+    const existing = store.instanceOptions.get(snapshot.sandboxId);
+    if (!existing || !('teamId' in existing)) {
+      store.instanceOptions.set(snapshot.sandboxId, snapshot);
+    }
   }
 
   /**
@@ -888,7 +925,7 @@ type Queue = {
   close(): void;
 };
 
-const queues = new Map<string, Queue>();
+const queues = store.queues; // Shared via globalThis: dev HMR can load one module instance per route, and a split queue map would make input and stream talk past each other.
 
 function queueFor(sandboxId: string, sessionId: string): Queue {
   const key = `${sandboxId}:${sessionId}`;

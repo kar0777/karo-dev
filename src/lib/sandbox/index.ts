@@ -33,6 +33,10 @@ export function getProvider(key: SandboxProviderKey): SandboxProvider {
   }
 }
 
+export function getMockProvider(): MockSandboxProvider {
+  return mock;
+}
+
 export function getDaytonaProvider(): DaytonaSandboxProvider {
   daytona ??= new DaytonaSandboxProvider();
   return daytona;

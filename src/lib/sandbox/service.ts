@@ -32,6 +32,7 @@ import { calculateComputeMultiplier, presetFor } from '@/lib/pricing/compute';
 import {
   PROVIDER_META,
   getDaytonaProvider,
+  getMockProvider,
   getProvider,
   getRemoteDockerProvider,
   resolveProviderForTarget,
@@ -125,6 +126,17 @@ export function rehydrateProvider(row: SandboxRow): SandboxProvider {
   }
   if (key === 'remote-docker' && row.externalId && row.workerId) {
     getRemoteDockerProvider().registerRoute(row.id, row.workerId, row.externalId);
+  }
+  if (key === 'mock' || key === 'external') {
+    // The simulator keeps machines in process memory. Feeding it the row's
+    // shape before every operation lets it rebuild a machine lost to a server
+    // restart instead of answering "no longer exists" until the row expires.
+    getMockProvider().rememberSnapshot({
+      sandboxId: row.id,
+      cpuCores: row.cpuCores,
+      memoryMb: row.memoryMb,
+      diskGb: row.diskGb,
+    });
   }
 
   return getProvider(key);
