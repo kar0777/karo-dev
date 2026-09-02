@@ -557,6 +557,9 @@ export default async function AgentsPage({ searchParams }: { searchParams: Searc
             isError: toolCalls.isError,
             exitCode: toolCalls.exitCode,
             durationMs: toolCalls.durationMs,
+            // Truncated tail: enough to see what came back, small enough that
+            // 200 calls stay a cheap server render.
+            resultPreview: sql<string>`left(${toolCalls.result}, 2000)`,
           })
           .from(toolCalls)
           .innerJoin(
@@ -1300,35 +1303,35 @@ export default async function AgentsPage({ searchParams }: { searchParams: Searc
                   description="It answered from the conversation alone. Ask mode never touches the machine, and a short question in any mode often does not need to."
                 />
               ) : (
-                <Table className="min-w-[44rem]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10 text-right">#</TableHead>
-                      <TableHead>Tool</TableHead>
-                      <TableHead>What it did</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Duration</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedCalls.map((call, index) => {
+                <ol className="px-4 py-4">
+                  {(() => {
+                    const maxDuration = Math.max(
+                      ...selectedCalls.map((call) => call.durationMs ?? 0),
+                      1,
+                    );
+                    return selectedCalls.map((call, index) => {
                       const command = stringArg(call.args, COMMAND_KEYS);
                       const path = stringArg(call.args, PATH_KEYS);
                       const statusMeta = TOOL_STATUS_META[call.status];
+                      const last = index === selectedCalls.length - 1;
+                      const share =
+                        (call.durationMs ?? 0) > 0
+                          ? Math.max(
+                              4,
+                              Math.round(((call.durationMs ?? 0) / maxDuration) * 100),
+                            )
+                          : 0;
                       return (
-                        <TableRow key={call.id}>
-                          <TableCell className="karo-numeric text-right text-subtle">
-                            {index + 1}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <span className="flex items-center gap-1.5">
-                              <span className="text-subtle">
-                                {renderIcon(
-                                  toolIconFor(call.toolName, call.source),
-                                  'size-3.5',
-                                )}
-                              </span>
-                              <span className="font-mono text-[12px] text-fg">
+                        <li key={call.id} className="relative flex gap-3 pb-4">
+                          <div className="flex w-6 shrink-0 flex-col items-center">
+                            <span className="z-10 flex size-6 shrink-0 items-center justify-center rounded-full border border-line bg-surface">
+                              {renderIcon(toolIconFor(call.toolName, call.source), 'size-3.5')}
+                            </span>
+                            {!last ? <span className="w-px flex-1 bg-line" /> : null}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="font-mono text-[12px] font-medium text-fg">
                                 {call.toolName}
                               </span>
                               {call.source !== 'builtin' ? (
@@ -1336,28 +1339,44 @@ export default async function AgentsPage({ searchParams }: { searchParams: Searc
                                   {call.sourceRef ?? call.source}
                                 </Badge>
                               ) : null}
-                            </span>
-                          </TableCell>
-                          <TableCell className="max-w-[26rem]">
-                            {command ? (
+                              <Badge variant={statusMeta.badge} size="sm">
+                                {statusMeta.label}
+                              </Badge>
+                              {call.exitCode !== null && call.exitCode !== 0 ? (
+                                <span className="karo-numeric text-[11px] text-danger">
+                                  exit {call.exitCode}
+                                </span>
+                              ) : null}
+                              <span className="karo-numeric ml-auto text-[11px] text-subtle">
+                                {call.durationMs > 0 ? formatDuration(call.durationMs) : '—'}
+                              </span>
+                            </div>
+                            {command || path ? (
                               <code
-                                className="block truncate font-mono text-[11.5px] text-fg"
-                                title={command}
+                                className="mt-1 block truncate rounded bg-bg-inset px-1.5 py-0.5 font-mono text-[11.5px] text-fg"
+                                title={command ?? path ?? undefined}
                               >
-                                $ {command}
+                                {command ? `$ ${command}` : path}
                               </code>
-                            ) : path ? (
-                              <code
-                                className="block truncate font-mono text-[11.5px] text-muted"
-                                title={path}
+                            ) : null}
+                            {share > 0 ? (
+                              <span
+                                aria-hidden="true"
+                                className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-surface-2"
                               >
-                                {path}
-                              </code>
+                                <span
+                                  className={cn(
+                                    'block h-full rounded-full',
+                                    call.isError ? 'bg-danger/60' : 'bg-primary/60',
+                                  )}
+                                  style={{ width: `${share}%` }}
+                                />
+                              </span>
                             ) : null}
                             {call.resultSummary ? (
                               <span
                                 className={cn(
-                                  'block truncate text-[11.5px]',
+                                  'mt-1 block truncate text-[11.5px]',
                                   call.isError ? 'text-danger' : 'text-muted',
                                 )}
                                 title={call.resultSummary}
@@ -1366,36 +1385,36 @@ export default async function AgentsPage({ searchParams }: { searchParams: Searc
                               </span>
                             ) : null}
                             {call.rejectedReason ? (
-                              <span className="block truncate text-[11.5px] text-muted">
+                              <span className="mt-1 block text-[11.5px] text-muted">
                                 Rejected: {call.rejectedReason}
                               </span>
                             ) : null}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <Badge variant={statusMeta.badge} size="sm">
-                              {statusMeta.label}
-                            </Badge>
                             {call.requiresApproval ? (
-                              <span className="block text-[11px] text-subtle">
+                              <span className="mt-1 block text-[11px] text-subtle">
                                 {call.approvedAt
                                   ? `Approved ${formatRelativeTime(call.approvedAt)}`
                                   : 'Needed a person'}
                               </span>
                             ) : null}
-                            {call.exitCode !== null && call.exitCode !== 0 ? (
-                              <span className="karo-numeric block text-[11px] text-danger">
-                                exit {call.exitCode}
-                              </span>
-                            ) : null}
-                          </TableCell>
-                          <TableCell className="karo-numeric text-right text-muted">
-                            {call.durationMs > 0 ? formatDuration(call.durationMs) : '—'}
-                          </TableCell>
-                        </TableRow>
+                            <details className="mt-1">
+                              <summary className="cursor-pointer select-none text-[11px] text-subtle hover:text-muted">
+                                Arguments &amp; result
+                              </summary>
+                              <pre className="mt-1 max-h-56 overflow-auto rounded-md border border-line bg-bg-inset p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-muted">
+                                {JSON.stringify(call.args ?? {}, null, 2)}
+                                {call.resultPreview
+                                  ? `
+— — —
+${call.resultPreview}`
+                                  : ''}
+                              </pre>
+                            </details>
+                          </div>
+                        </li>
                       );
-                    })}
-                  </TableBody>
-                </Table>
+                    });
+                  })()}
+                </ol>
               )}
             </>
           )}
