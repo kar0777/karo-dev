@@ -86,10 +86,11 @@ export function CliAgentsDialog({
   const checkTimers = React.useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const load = React.useCallback(async () => {
-    if (!sandboxId) return;
+    // The catalogue loads even without a running machine — install state is
+    // simply omitted, and the dialog explains that installs need the sandbox.
     try {
       const payload = await apiFetch<{ tools: CliToolView[] }>(
-        `/api/cli-tools?sandboxId=${encodeURIComponent(sandboxId)}`,
+        sandboxId ? `/api/cli-tools?sandboxId=${encodeURIComponent(sandboxId)}` : '/api/cli-tools',
       );
       setTools(payload.tools);
       setLoadError(null);

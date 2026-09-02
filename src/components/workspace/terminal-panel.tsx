@@ -767,7 +767,6 @@ export function TerminalPanel() {
                 size="sm"
                 variant="ghost"
                 className="gap-1.5 text-[12px]"
-                disabled={!running}
                 onClick={() => setCliDialogOpen(true)}
               >
                 <PackagePlus className="size-3.5" />
