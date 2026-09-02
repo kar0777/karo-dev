@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
+import { useTranslator } from '@/components/i18n-provider';
 import { KaroLogo } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -28,10 +29,10 @@ import { cn } from '@/lib/utils';
  * ------------------------------------------------------------------ */
 
 const NAV_LINKS = [
-  { href: '/features', label: 'Features' },
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/docs', label: 'Docs' },
-  { href: '/security', label: 'Security' },
+  { href: '/features', labelKey: 'marketing.nav.features' },
+  { href: '/pricing', labelKey: 'marketing.nav.pricing' },
+  { href: '/docs', labelKey: 'marketing.nav.docs' },
+  { href: '/security', labelKey: 'marketing.nav.security' },
 ] as const;
 
 function useScrolled(threshold = 8): boolean {
@@ -48,6 +49,7 @@ function useScrolled(threshold = 8): boolean {
 }
 
 export function SiteHeader() {
+  const t = useTranslator();
   const pathname = usePathname();
   const scrolled = useScrolled();
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -80,7 +82,7 @@ export function SiteHeader() {
                   : 'text-muted hover:bg-surface-2 hover:text-fg',
               )}
             >
-              {link.label}
+              {t(link.labelKey)}
             </Link>
           ))}
         </nav>
@@ -89,11 +91,11 @@ export function SiteHeader() {
           <ThemeToggle />
 
           <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-            <Link href="/login">Sign in</Link>
+            <Link href="/login">{t('marketing.nav.signIn')}</Link>
           </Button>
 
           <Button asChild size="sm" className="hidden sm:inline-flex">
-            <Link href="/register">Start building</Link>
+            <Link href="/register">{t('marketing.nav.start')}</Link>
           </Button>
 
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
@@ -130,7 +132,7 @@ export function SiteHeader() {
                         : 'text-muted hover:bg-surface-2 hover:text-fg',
                     )}
                   >
-                    {link.label}
+                    {t(link.labelKey)}
                   </Link>
                 ))}
                 <Link
@@ -147,7 +149,7 @@ export function SiteHeader() {
               <div className="flex flex-col gap-2">
                 <Button asChild size="lg">
                   <Link href="/register" onClick={() => setMenuOpen(false)}>
-                    Start building
+                    {t('marketing.nav.start')}
                   </Link>
                 </Button>
                 <Button asChild variant="outline" size="lg">
@@ -157,7 +159,7 @@ export function SiteHeader() {
                 </Button>
                 <Button asChild variant="ghost" size="lg">
                   <Link href="/login" onClick={() => setMenuOpen(false)}>
-                    Sign in
+                    {t('marketing.nav.signIn')}
                   </Link>
                 </Button>
               </div>

@@ -1,3 +1,5 @@
+import { getTranslator } from '@/lib/i18n-server';
+
 import { ArrowRight, Check, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 
@@ -84,38 +86,32 @@ export function FaqSection() {
   );
 }
 
-export function FinalCta() {
+export async function FinalCta() {
+  const t = await getTranslator();
   return (
     <section className="relative isolate overflow-hidden border-t border-line">
       <LatticeBackdrop fade="top" opacity={45} animated />
 
       <div className={`${CONTAINER} py-16 sm:py-20 lg:py-24`}>
         <div className="flex max-w-3xl flex-col items-start gap-5">
-          <h2 className="text-3xl text-balance sm:text-4xl">
-            Give the agent a machine and see what it ships.
-          </h2>
+          <h2 className="text-3xl text-balance sm:text-4xl">{t('marketing.cta.title')}</h2>
           <p className="max-w-2xl text-[16px] leading-relaxed text-muted">
-            Start with the demo — no card, no provider keys, nothing to configure. When you are
-            ready for a real sandbox and a real model, the same workspace picks up where you
-            left off.
+            {t('marketing.cta.description')}
           </p>
 
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
             <Button asChild size="lg" iconRight={<ArrowRight aria-hidden="true" />}>
-              <Link href="/register">Start building</Link>
+              <Link href="/register">{t('marketing.cta.ctaStart')}</Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link href="/login?demo=1">Try the demo</Link>
+              <Link href="/login?demo=1">{t('marketing.cta.ctaDemo')}</Link>
             </Button>
             <Button asChild size="lg" variant="ghost">
-              <Link href="/pricing">Compare plans</Link>
+              <Link href="/pricing">{t('marketing.cta.ctaPlans')}</Link>
             </Button>
           </div>
 
-          <p className="text-[13px] text-subtle">
-            Runs on your server or ours · Bring your own model key · Every token and second
-            itemised
-          </p>
+          <p className="text-[13px] text-subtle">{t('marketing.cta.note')}</p>
         </div>
       </div>
     </section>

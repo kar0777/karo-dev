@@ -9,6 +9,7 @@ import {
   type PlanView,
 } from '@/components/marketing/plan-view';
 import { Section, SectionIntro } from '@/components/marketing/section';
+import { getTranslator } from '@/lib/i18n-server';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
@@ -20,13 +21,14 @@ import { Button } from '@/components/ui/button';
  *  500 on the landing page is worse than a stale number with a caveat.
  * ------------------------------------------------------------------ */
 
-export function PricingPreview({
+export async function PricingPreview({
   plans,
   source,
 }: {
   plans: readonly PlanView[];
   source: CatalogSource;
 }) {
+  const t = await getTranslator();
   const featured = LANDING_PLAN_KEYS.map((key) => planByKey(plans, key)).filter(
     (plan): plan is PlanView => plan !== undefined,
   );
@@ -37,8 +39,8 @@ export function PricingPreview({
       <SectionIntro
         eyebrow="Pricing"
         eyebrowTone="ember"
-        title="A plan for the allowance, metering for everything past it."
-        description="Subscriptions bundle weighted tokens, compute hours and machine sizes. Go past the allowance and you pay the plan's published overage rate — or skip the subscription entirely and pay as you go."
+        title={t('marketing.pricingPreview.title')}
+        description={t('marketing.pricingPreview.description')}
       />
 
       {source === 'fallback' ? (

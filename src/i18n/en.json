@@ -251,6 +251,40 @@
       "cancelled": "Stopped"
     }
   },
+  "marketing": {
+    "nav": {
+      "features": "Features",
+      "pricing": "Pricing",
+      "docs": "Docs",
+      "security": "Security",
+      "signIn": "Sign in",
+      "start": "Start building"
+    },
+    "hero": {
+      "badge": "An agent, a terminal, MCP, skills and a sandbox — in one workspace",
+      "title": "Build anything with an AI agent that has a real computer.",
+      "subtitle": "Karo gives the agent its own sandboxed Linux machine. It reads and writes your project files, runs real shell commands in a terminal you can watch, connects tools over MCP, loads skills you install — and every token and compute-second is metered, so a task's cost is never a surprise.",
+      "ctaStart": "Start building",
+      "ctaPricing": "View pricing",
+      "ctaDemo": "Try demo",
+      "trust1": "Runs on your server or ours",
+      "trust2": "No card for demo mode",
+      "trust3": "Open standards: MCP",
+      "trust4": "Every token and second metered"
+    },
+    "pricingPreview": {
+      "title": "A plan for the allowance, metering for everything past it.",
+      "description": "Subscriptions bundle weighted tokens, compute hours and machine sizes. Go past the allowance and you pay the plan's published overage rate — or skip the subscription entirely and pay as you go."
+    },
+    "cta": {
+      "title": "Give the agent a machine and see what it ships.",
+      "description": "Start with the demo — no card, no provider keys, nothing to configure. When you are ready for a real sandbox and a real model, the same workspace picks up where you left off.",
+      "ctaStart": "Start building",
+      "ctaDemo": "Try the demo",
+      "ctaPlans": "Compare plans",
+      "note": "Runs on your server or ours · Bring your own model key · Every token and second itemised"
+    }
+  },
   "chat": {
     "title": "Chat",
     "newConversation": "New conversation",
