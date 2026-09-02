@@ -709,13 +709,15 @@ Stated plainly, because a list of caveats is more useful than a list of claims.
    shipped transport — no mail dependency is bundled.
 10. **Storage quotas are tracked, not enforced** at the filesystem level; the per-sandbox disk
     limit is enforced by the container runtime, not by Karo.
-11. **The UI is English-only; localisation is the architecture, not the content.**
-    `src/lib/i18n.ts` is a complete translator — dot-path keys typed against the dictionary,
-    parameter interpolation, `Accept-Language` negotiation — and `src/i18n/` holds `en.json` and
-    `ru.json`. What is missing is the call sites: components hold their copy inline, so choosing
-    Russian in Settings stores the preference without changing what you see. Wiring it up is
-    mechanical but touches every component, and half-translating a product reads worse than not
-    translating it.
+11. **Localisation is wired for the shell, not for every sentence.** `src/lib/i18n.ts` is a
+    complete translator — dot-path keys typed against the dictionary, parameter interpolation,
+    `Accept-Language` negotiation — and `src/i18n/` holds `en.json` and `ru.json` (569 keys,
+    shape-checked against each other). The product shell is translated: sidebar navigation, the
+    command palette, the user menu, profile/settings, workspace tabs and run statuses. Pick a
+    language in Settings → Profile and the chrome follows. What is still English: the marketing
+    site, deep workspace panels (chat bodies, tasks/changes detail copy) and most admin pages —
+    wiring a string is a two-line change (add the key to both dictionaries, call `t()`), but it
+    has not been done for every sentence yet.
 
 ---
 

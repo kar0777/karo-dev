@@ -212,6 +212,24 @@
     "limitReachedDescription": "Your plan includes {limit} projects. Archive one you're finished with, or move up a plan."
   },
 
+  "workspace": {
+    "tabs": {
+      "chat": "Chat",
+      "code": "Code",
+      "preview": "Preview",
+      "terminal": "Terminal",
+      "tasks": "Tasks",
+      "changes": "Changes"
+    },
+    "runStatus": {
+      "queued": "Queued",
+      "running": "Running",
+      "awaitingApproval": "Waiting on you",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "cancelled": "Stopped"
+    }
+  },
   "chat": {
     "title": "Chat",
     "newConversation": "New conversation",

@@ -41,6 +41,8 @@ import type {
   WorkspaceRun,
   WorkspaceTabKey,
 } from '@/components/workspace/types';
+import { useTranslator } from '@/components/i18n-provider';
+import type { LooseTranslationKey } from '@/lib/i18n';
 import { useWorkspace } from '@/components/workspace/workspace-context';
 import { AGENT_MODE_META } from '@/lib/agent/policy';
 import type { RunStatus } from '@/lib/db/schema';
@@ -83,13 +85,13 @@ const TAB_ORDER: readonly WorkspaceTabKey[] = [
   'changes',
 ];
 
-const TAB_LABEL: Record<WorkspaceTabKey, string> = {
-  chat: 'Chat',
-  code: 'Code',
-  preview: 'Preview',
-  terminal: 'Terminal',
-  tasks: 'Tasks',
-  changes: 'Changes',
+const TAB_LABEL_KEY: Record<WorkspaceTabKey, LooseTranslationKey> = {
+  chat: 'workspace.tabs.chat',
+  code: 'workspace.tabs.code',
+  preview: 'workspace.tabs.preview',
+  terminal: 'workspace.tabs.terminal',
+  tasks: 'workspace.tabs.tasks',
+  changes: 'workspace.tabs.changes',
 };
 
 /**
@@ -122,13 +124,13 @@ const RUN_TONE: Record<RunStatus, 'neutral' | 'primary' | 'warning' | 'success' 
   cancelled: 'neutral',
 };
 
-const RUN_LABEL: Record<RunStatus, string> = {
-  queued: 'Queued',
-  running: 'Running',
-  awaiting_approval: 'Waiting on you',
-  succeeded: 'Succeeded',
-  failed: 'Failed',
-  cancelled: 'Stopped',
+const RUN_STATUS_KEY: Record<RunStatus, LooseTranslationKey> = {
+  queued: 'workspace.runStatus.queued',
+  running: 'workspace.runStatus.running',
+  awaiting_approval: 'workspace.runStatus.awaitingApproval',
+  succeeded: 'workspace.runStatus.succeeded',
+  failed: 'workspace.runStatus.failed',
+  cancelled: 'workspace.runStatus.cancelled',
 };
 
 const CHANGE_TONE: Record<
@@ -154,6 +156,7 @@ const CHANGE_TONE: Record<
  * runs expects.
  */
 function TasksPanel() {
+  const t = useTranslator();
   const { runs, activeRunId, setTab, isStreaming } = useWorkspace();
 
   const [selectedId, setSelectedId] = React.useState<string | null>(
@@ -195,7 +198,7 @@ function TasksPanel() {
           <h2 className="flex items-center gap-2 truncate text-[13px] font-semibold text-fg">
             {run.title}
             <Badge variant={RUN_TONE[run.status]} size="sm">
-              {RUN_LABEL[run.status]}
+              {t(RUN_STATUS_KEY[run.status])}
             </Badge>
           </h2>
           <p className="karo-numeric truncate text-[11.5px] text-subtle">
@@ -276,7 +279,7 @@ function TasksPanel() {
                       )}
                     >
                       <Badge variant={RUN_TONE[candidate.status]} size="sm">
-                        {RUN_LABEL[candidate.status]}
+                        {t(RUN_STATUS_KEY[candidate.status])}
                       </Badge>
                       <span className="min-w-0 flex-1 truncate text-muted">
                         {candidate.title}
@@ -501,6 +504,7 @@ function TabStrip({
   onFocusTab: (index: number) => void;
   tabRefs: React.RefObject<Array<HTMLButtonElement | null>>;
 }) {
+  const t = useTranslator();
   const { tab, setTab, pendingChanges, isStreaming } = useWorkspace();
 
   const badgeFor = (key: WorkspaceTabKey): number | null => {
@@ -557,7 +561,7 @@ function TabStrip({
             )}
           >
             {TAB_ICON[key]}
-            <span>{TAB_LABEL[key]}</span>
+            <span>{t(TAB_LABEL_KEY[key])}</span>
             {badge !== null ? (
               <Badge variant={key === 'changes' ? 'ember' : 'neutral'} size="sm">
                 {badge}

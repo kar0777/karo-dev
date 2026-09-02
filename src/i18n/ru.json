@@ -212,6 +212,24 @@
     "limitReachedDescription": "Ваш тариф включает {limit} проектов. Отправьте в архив завершённый или перейдите на тариф выше."
   },
 
+  "workspace": {
+    "tabs": {
+      "chat": "Чат",
+      "code": "Код",
+      "preview": "Превью",
+      "terminal": "Терминал",
+      "tasks": "Задачи",
+      "changes": "Изменения"
+    },
+    "runStatus": {
+      "queued": "В очереди",
+      "running": "Выполняется",
+      "awaitingApproval": "Ждёт вас",
+      "succeeded": "Готово",
+      "failed": "Ошибка",
+      "cancelled": "Остановлено"
+    }
+  },
   "chat": {
     "title": "Чат",
     "newConversation": "Новый диалог",
