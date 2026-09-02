@@ -27,7 +27,21 @@ async function signIn(page: Page) {
 async function openWorkspace(page: Page) {
   await page.goto('/app/projects');
   const card = page.locator('a[href^="/app/projects/"]').first();
-  await card.waitFor({ timeout: 20_000 });
+  const present = await card.isVisible().catch(() => false);
+
+  if (!present) {
+    // A fresh account has no projects — make one so the workspace opens.
+    await page.getByRole('button', { name: /new project|create project/i }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await dialog.getByLabel(/name/i).first().fill('CLI Agents E2E');
+    const templates = dialog.getByRole('radio');
+    if ((await templates.count()) > 0) await templates.first().check();
+    await dialog.getByRole('button', { name: /create/i }).first().click();
+    await page.waitForURL(/\/app\/projects\/prj_/, { timeout: 30_000 });
+    return;
+  }
+
   await card.click();
   await page.waitForURL(/\/app\/projects\/prj_/, { timeout: 30_000 });
 }
