@@ -1729,7 +1729,13 @@ export function WorkspaceProvider({
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [sandbox?.id, sandbox?.status, sandbox]);
+    // Deps are the sandbox identity and its lifecycle status — deliberately
+    // NOT the sandbox object itself. Every poll writes CPU/RAM back into
+    // state, so a whole-object dependency would restart this effect after
+    // each response and turn the 5-second cadence into an immediate-response
+    // tight loop (observed at ~30 req/s until the rate limiter stepped in).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sandbox?.id, sandbox?.status]);
 
   /* ---------------- Global shortcuts ---------------- */
 
