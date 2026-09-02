@@ -59,6 +59,7 @@
     "themeDark": "Dark",
     "themeSystem": "System",
     "language": "Language",
+    "errorTitle": "Something failed",
     "never": "Never",
     "justNow": "Just now",
     "unknown": "Unknown",
@@ -220,6 +221,26 @@
       "terminal": "Terminal",
       "tasks": "Tasks",
       "changes": "Changes"
+    },
+    "tasks": {
+      "emptyTitle": "No agent run yet",
+      "emptyDescription": "Ask for something in Plan or Auto mode and the agent's steps appear here as it works through them, with the tokens and cost each run spent.",
+      "goToChat": "Go to chat",
+      "stepsOf": "{done}/{total} steps",
+      "weighted": "weighted",
+      "runInProgress": "Run in progress",
+      "noPlanTitle": "This run did not produce a plan",
+      "noPlanDescription": "Ask and Build modes answer directly. Plan and Auto break the work into steps first, and those steps show up here.",
+      "allRuns": "All runs"
+    },
+    "changes": {
+      "reload": "Reload pending changes",
+      "applyAll": "Apply all",
+      "errorTitle": "Could not load the pending changes",
+      "emptyTitle": "Nothing to review",
+      "emptyDescription": "When the agent edits a file it proposes the change here instead of writing it straight to the workspace. Approve it and Karo applies the patch; discard it and the file is untouched.",
+      "apply": "Apply",
+      "reject": "Reject"
     },
     "runStatus": {
       "queued": "Queued",

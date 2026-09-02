@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   Check,
   CreditCard,
+  Languages,
   LogOut,
   Monitor,
   Moon,
@@ -17,7 +18,8 @@ import {
 import { useTheme } from 'next-themes';
 
 import { useSession } from '@/components/app/session-provider';
-import { useTranslator } from '@/components/i18n-provider';
+import { useLocale, useTranslator } from '@/components/i18n-provider';
+import { LOCALES, LOCALE_NAMES, type Locale } from '@/lib/i18n';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -55,6 +57,8 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
   const t = useTranslator();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { locale } = useLocale();
+  const [savingLocale, setSavingLocale] = React.useState(false);
   const mounted = useMounted();
   const [signingOut, setSigningOut] = React.useState(false);
 
@@ -76,6 +80,21 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
     }
     // A hard navigation, so no stale server-rendered payload survives.
     window.location.assign('/login');
+  }
+
+  async function changeLocale(next: Locale) {
+    if (next === locale || savingLocale) return;
+    setSavingLocale(true);
+    try {
+      await apiFetch('/api/settings/profile', { method: 'PATCH', json: { locale: next } });
+      // The layout re-resolves the locale from the saved preference.
+      router.refresh();
+    } catch (error) {
+      const { message } = describeError(error);
+      toast.error(t('common.errorTitle'), { description: message });
+    } finally {
+      setSavingLocale(false);
+    }
   }
 
   const displayName = user.name.trim() || user.email;
@@ -165,6 +184,28 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
                 </DropdownMenuItem>
               );
             })}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="gap-2">
+            <Languages className="size-4" aria-hidden="true" />
+            {t('common.language')}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-40">
+            {LOCALES.map((code) => (
+              <DropdownMenuItem
+                key={code}
+                disabled={savingLocale}
+                onSelect={() => void changeLocale(code)}
+                className="justify-between gap-2"
+              >
+                <span>{LOCALE_NAMES[code]}</span>
+                {locale === code ? (
+                  <Check className="size-3.5 text-primary" aria-hidden="true" />
+                ) : null}
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
 

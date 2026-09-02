@@ -177,11 +177,11 @@ function TasksPanel() {
       <div className="flex h-full items-center justify-center p-6">
         <EmptyState
           icon={ListChecks}
-          title="No agent run yet"
-          description="Ask for something in Plan or Auto mode and the agent's steps appear here as it works through them, with the tokens and cost each run spent."
+          title={t('workspace.tasks.emptyTitle')}
+          description={t('workspace.tasks.emptyDescription')}
           action={
             <Button size="sm" onClick={() => setTab('chat')}>
-              Go to chat
+              {t('workspace.tasks.goToChat')}
             </Button>
           }
         />
@@ -203,13 +203,15 @@ function TasksPanel() {
           </h2>
           <p className="karo-numeric truncate text-[11.5px] text-subtle">
             {AGENT_MODE_META[run.mode].label} ·{' '}
-            {run.steps.length > 0 ? `${done}/${run.steps.length} steps · ` : ''}
-            {formatCompactNumber(run.totalWeightedTokens)} weighted ·{' '}
+            {run.steps.length > 0
+              ? `${t('workspace.tasks.stepsOf', { done, total: run.steps.length })} · `
+              : ''}
+            {formatCompactNumber(run.totalWeightedTokens)} {t('workspace.tasks.weighted')} ·{' '}
             {formatMicroUsd(run.totalChargedMicroUsd, { precise: true })}
           </p>
         </div>
         {isStreaming && run.id === activeRunId ? (
-          <Spinner size="sm" label="Run in progress" />
+          <Spinner size="sm" label={t('workspace.tasks.runInProgress')} />
         ) : null}
       </header>
 
@@ -225,8 +227,8 @@ function TasksPanel() {
             <EmptyState
               size="sm"
               icon={ListChecks}
-              title="This run did not produce a plan"
-              description="Ask and Build modes answer directly. Plan and Auto break the work into steps first, and those steps show up here."
+              title={t('workspace.tasks.noPlanTitle')}
+              description={t('workspace.tasks.noPlanDescription')}
             />
           ) : (
             <ol className="space-y-1">
@@ -261,7 +263,7 @@ function TasksPanel() {
           )}
 
           {runs.length > 1 ? (
-            <section aria-label="All runs" className="mt-6">
+            <section aria-label={t('workspace.tasks.allRuns')} className="mt-6">
               <h3 className="text-[11px] font-medium tracking-wide text-subtle uppercase">
                 All runs
               </h3>
@@ -312,6 +314,7 @@ function TasksPanel() {
  * double-applying a patch is exactly the sort of thing an impatient click does.
  */
 function ChangesPanel() {
+  const t = useTranslator();
   const {
     pendingChanges,
     changesLoading,
@@ -376,7 +379,7 @@ function ChangesPanel() {
         <Button
           size="icon-sm"
           variant="ghost"
-          aria-label="Reload pending changes"
+          aria-label={t('workspace.changes.reload')}
           onClick={refreshChanges}
         >
           {changesLoading ? (
@@ -395,7 +398,7 @@ function ChangesPanel() {
               disabled={!canApprove}
               onClick={() => decide(allPaths, 'reject')}
             >
-              Discard all
+              {t('workspace.changes.reject')}
             </Button>
             <Button
               size="xs"
@@ -404,7 +407,7 @@ function ChangesPanel() {
               disabled={!canApprove}
               onClick={() => decide(allPaths, 'apply')}
             >
-              Apply all
+              {t('workspace.changes.applyAll')}
             </Button>
           </>
         ) : null}
@@ -414,15 +417,15 @@ function ChangesPanel() {
         <div className="mx-auto w-full max-w-4xl">
           {changesError ? (
             <ErrorState
-              title="Could not load the pending changes"
+              title={t('workspace.changes.errorTitle')}
               description={changesError}
               retry={refreshChanges}
             />
           ) : pendingChanges.length === 0 ? (
             <EmptyState
               icon={FileDiff}
-              title="Nothing to review"
-              description="When the agent edits a file it proposes the change here instead of writing it straight to the workspace. Approve it and Karo applies the patch; discard it and the file is untouched."
+              title={t('workspace.changes.emptyTitle')}
+              description={t('workspace.changes.emptyDescription')}
             />
           ) : (
             <ul className="space-y-3">
@@ -456,7 +459,7 @@ function ChangesPanel() {
                         disabled={!canApprove}
                         onClick={() => decide([change.path], 'reject')}
                       >
-                        Discard
+                        {t('workspace.changes.reject')}
                       </Button>
                       <Button
                         size="xs"
@@ -465,7 +468,7 @@ function ChangesPanel() {
                         disabled={!canApprove}
                         onClick={() => decide([change.path], 'apply')}
                       >
-                        Apply
+                        {t('workspace.changes.apply')}
                       </Button>
                     </div>
                     <DiffView
