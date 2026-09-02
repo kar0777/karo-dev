@@ -63,3 +63,35 @@ Onboarding wizard specs (`walks the onboarding wizard…`, `creates a project fr
 - Vercel Hobby is non-commercial and caps function duration; its cron fires daily — hence the consolidated tick plus the optional hourly GitHub Actions ping.
 - `CRON_SECRET` / `TRUST_PROXY_HOPS` are read from `process.env` rather than the zod env schema — intentional in the codebase (optional infra config), left as-is and documented here.
 - Rate limiter stays fail-open on Redis errors — the codebase's documented trade-off.
+
+---
+
+# Iteration: CLI agents, MCP in the loop, workspace resilience (2026-09-02)
+
+Second documented run: four feature/fix cycles, each ending in verify + live
+browser + API testing + push (Vercel deploys from `main`).
+
+## Baseline
+
+| Check | Result |
+| --- | --- |
+| `npm run typecheck` + `npx vitest run` | **exit 0** — 30 files / 414 tests. First run failed 28 integration tests with connect timeouts: the WSL Postgres VM had gone idle and Windows→WSL NAT dropped the wake-up connections. `wsl hostname -I` (any `wsl.exe` call) wakes it; a `while true; do sleep 15; done` keep-alive runs for the duration of the session. |
+
+## Cycles
+
+| Commit | Cycle | Verification beyond `npm run verify` |
+| --- | --- | --- |
+| `1feb210` cli agents: installable terminal coding agents | Catalogue of 8 vendor-documented tools (`cli_tools` + `sandbox_cli_installs`, migration 0007, seeds), install/check/launch API, workspace dialog, `/admin/cli-tools`. Also: metrics-polling tight-loop fix. | curl: login → create sandbox → check=missing → exec install → check=installed `claude 1.0.0` → launch opens titled session with launcher script. Browser: install from the dialog flips the badge via the 4s auto-check; machine-OS tab prints per-OS commands; admin toggle hides the tool from the user catalogue (8→7→8). Playwright: new `cli-agents.spec.ts` 2/2. |
+| `f82f73a` agent runtime: wire MCP tools into the loop | `loadToolsForProject` merged into the run's tool list (cap 40), `source: 'mcp'` persistence, approval flow routed through `callTool`, prompt summary. | Unit 3/3 (approval gate, hand-off, error mapping). Integration 4/4 against a real stdio MCP server (discovery, namespacing, destructive routing, end-to-end call). Live: build-mode run on Qwen3-Coder via W&B called `mcp__echo_server__echo` and reported the echoed text. |
+| `30097c6` sandbox: make simulated machines survive a restart | `rehydrateProvider` feeds the row shape to the simulator; queues share the globalThis store; `queue.next()` races the abort signal so the scrollback flush always fires on detach. | Restarted the dev server mid-session: terminals reconnect without "Reconnecting…", `echo` output lands in the `terminal_sessions.scrollback` row (was: 0 bytes, permanent reconnect loop). |
+| `416ba38` admin: quick actions on the overview page | Three idempotent maintenance buttons (cron tick, idle sweep, model sync) with toasts + `router.refresh`. | `/admin` was completely dead — the platform-counts query passed a raw `Date` into `sql\`\`` and postgres.js rejected it (ERR_INVALID_ARG_TYPE), 500 behind the error boundary on every render. Fixed with an ISO-string parameter; browser: page renders, all three buttons return 200 with toasts. |
+
+## Notes for the next iteration
+
+· The e2e suite defaults to `PLAYWRIGHT_BASE_URL=http://localhost:3000`; on
+  this machine port 3000 is another project, so run e2e against the dev server
+  on 3001 with the env var.
+· `MCP_STDIO_ALLOWED_COMMANDS=node` is test-only; production keeps the
+  `npx`/`uvx` default.
+· i18n (RU/EN) remains the biggest unplumbed surface: dictionaries and
+  `src/lib/i18n.ts` exist, no call sites are wired.
