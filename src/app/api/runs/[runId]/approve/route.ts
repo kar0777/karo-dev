@@ -12,6 +12,7 @@ import { requireApiProjectAccess } from '@/lib/auth/guards';
 import { db } from '@/lib/db';
 import { agentRuns, projectFiles, sandboxes, toolCalls } from '@/lib/db/schema';
 import { createLogger } from '@/lib/logger';
+import { callTool, loadToolsForProject } from '@/lib/mcp/manager';
 import { rehydrateProvider } from '@/lib/sandbox/service';
 import type { ChatFileChangeView } from '@/lib/types/agent';
 
@@ -130,6 +131,61 @@ export const POST = defineHandler(
     }
 
     /* ---- Approve: run it for real --------------------------------------- */
+
+    // MCP tools are not builtin handlers: re-resolve the route from the team's
+    // still-enabled servers, then execute through the same manager path the
+    // run loop used. A server disabled between pause and approval reads as
+    // "no longer provides this tool", which is the honest answer.
+    if (call.toolName.startsWith('mcp__')) {
+      const { routes } = await loadToolsForProject(access.team.id, run.projectId);
+      const route = routes.get(call.toolName);
+      if (!route) {
+        throw new ConflictError(`The MCP server behind "${call.toolName}" is not available.`, {
+          title: 'Tool unavailable',
+          description:
+            'The MCP server this step needs is disabled or unreachable now. Reject the step and ask the agent for another approach.',
+        });
+      }
+
+      const startedAt = Date.now();
+      const outcome = await callTool(route.serverId, route.toolName, args);
+      const durationMs = Date.now() - startedAt;
+
+      await db
+        .update(toolCalls)
+        .set({
+          result: outcome.output.slice(0, 100_000),
+          resultSummary: `${route.toolName} (MCP)`,
+          status: outcome.isError ? 'failed' : 'succeeded',
+          isError: outcome.isError,
+          durationMs,
+          approvedById: user.id,
+          approvedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(toolCalls.id, call.id));
+
+      await settleRun(runId, run.status);
+      setAudit({
+        resourceId: call.id,
+        summary: `Approved ${call.toolName}`,
+        metadata: { runId, toolName: call.toolName, mcp: true },
+      });
+
+      return json({
+        toolCallId: call.id,
+        decision: 'approve' as const,
+        status: outcome.isError ? ('failed' as const) : ('succeeded' as const),
+        summary: `${route.toolName} (MCP)`,
+        output: outcome.output.slice(0, 24_000),
+        isError: outcome.isError,
+        exitCode: null,
+        durationMs,
+        fileChanges: [] as ChatFileChangeView[],
+        /** True when the agent needs another turn to continue from here. */
+        needsFollowUp: !outcome.isError,
+      });
+    }
 
     const handler = BUILTIN_TOOL_HANDLERS[call.toolName];
     if (!handler) {

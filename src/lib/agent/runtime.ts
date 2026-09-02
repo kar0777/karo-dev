@@ -37,6 +37,7 @@ import {
 import { env } from '@/lib/env';
 import { checkSpendGuard } from '@/lib/pricing/calculator';
 import { SETTING_KEYS, getSetting, settingDefault } from '@/lib/settings';
+import { callTool, loadToolsForProject } from '@/lib/mcp/manager';
 import { buildSystemPrompt } from './prompt';
 import { resolveAgentPermissions, type AgentPermissions } from './policy';
 import {
@@ -44,6 +45,7 @@ import {
   BUILTIN_TOOL_HANDLERS,
   sanitizeToolOutput,
   type ToolContext,
+  type ToolResult,
 } from './tools';
 
 const log = createLogger('agent');
@@ -73,6 +75,13 @@ const MAX_ITERATIONS: Record<RunAgentInput['mode'], number> = {
   build: 12,
   auto: 24,
 };
+
+/**
+ * Ceiling on MCP tool definitions offered in one run. A server exposing
+ * dozens of tools is a context-window hazard, not a feature; the server's
+ * `allowedTools` list is the intended way to narrow a chatty server.
+ */
+const MAX_MCP_TOOLS = 40;
 
 /**
  * The agent loop.
@@ -119,6 +128,7 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
     systemPrompt,
     billing,
     modelNotice,
+    mcp,
   } = context;
 
   // Said before anything streams, so the reply is never read as coming from the
@@ -288,7 +298,10 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
     ...history,
   ];
 
-  const tools: ToolDefinition[] = input.mode === 'ask' ? [] : availableTools(permissions);
+  const tools: ToolDefinition[] =
+    input.mode === 'ask'
+      ? []
+      : [...availableTools(permissions), ...mcp.definitions.slice(0, MAX_MCP_TOOLS)];
 
   const fileChanges: Array<{
     path: string;
@@ -574,15 +587,16 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
         }
 
         const changesBefore = fileChanges.length;
+        const mcpRoute = mcp.routes.get(call.name);
 
         yield {
           type: 'tool.start',
           toolCallId: dbToolCallId,
           toolName: call.name,
-          source: 'builtin',
+          source: mcpRoute ? 'mcp' : 'builtin',
           title: describeToolCall(call.name, args),
           args,
-          requiresApproval: false,
+          requiresApproval: mcpRoute?.requiresApproval === true,
         };
 
         await db.insert(toolCallsTable).values({
@@ -591,7 +605,7 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
           messageId: assistantMessageId,
           externalCallId: call.id,
           toolName: call.name,
-          source: 'builtin',
+          source: mcpRoute ? 'mcp' : 'builtin',
           args,
           status: 'running',
           sequence: toolSequence,
@@ -601,7 +615,9 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
         const toolStart = Date.now();
 
         let result;
-        if (!handler) {
+        if (mcpRoute) {
+          result = await runMcpToolCall(mcpRoute, args);
+        } else if (!handler) {
           result = {
             output: `Unknown tool: ${call.name}`,
             summary: `Unknown tool: ${call.name}`,
@@ -663,7 +679,7 @@ export async function* runAgent(input: RunAgentInput): AsyncGenerator<AgentStrea
           yield {
             type: 'approval.required',
             toolCallId: dbToolCallId,
-            kind: call.name === 'run_command' ? 'command' : 'file',
+            kind: mcpRoute ? 'tool' : call.name === 'run_command' ? 'command' : 'file',
             title: describeToolCall(call.name, args),
             reason: result.needsApproval.reason,
             preview: result.needsApproval.preview,
@@ -829,6 +845,8 @@ type RunContext = {
   knownSecrets: string[];
   /** Set when an inherited, unreachable model was replaced by the default. */
   modelNotice: string | null;
+  /** Namespaced MCP tool definitions plus the routes that execute them. */
+  mcp: Awaited<ReturnType<typeof loadToolsForProject>>;
 };
 
 async function loadRunContext(
@@ -939,6 +957,25 @@ async function loadRunContext(
     .where(and(eq(installedSkills.teamId, input.teamId), eq(installedSkills.isEnabled, true)))
     .limit(10);
 
+  // MCP tools ride along only when the mode and the project's permissions
+  // allow them. `loadToolsForProject` skips unreachable servers rather than
+  // failing the run — a broken connection in settings must not take chat down.
+  const mcp =
+    input.mode !== 'ask' && permissions.useMcpTools
+      ? await loadToolsForProject(input.teamId, input.projectId)
+      : { definitions: [], routes: new Map() };
+
+  // The prompt summary is capped hard: a server exposing fifty tools would
+  // otherwise eat the context window before the first user message.
+  const mcpSummary = mcp.definitions.slice(0, MAX_MCP_TOOLS).map((definition) => {
+    const [, server, name] = definition.name.split('__');
+    return {
+      server: server ?? 'mcp',
+      name: name ?? definition.name,
+      description: definition.description.slice(0, 200),
+    };
+  });
+
   const systemPrompt = buildSystemPrompt({
     mode: input.mode,
     permissions,
@@ -951,7 +988,7 @@ async function loadRunContext(
     demoMode: env.DEMO_MODE,
     fileTree: fileRows.map((f) => f.path),
     skills: activeSkills,
-    mcpTools: [],
+    mcpTools: mcpSummary,
   });
 
   const history = await loadHistory(input.conversationId, model.contextWindow);
@@ -973,6 +1010,7 @@ async function loadRunContext(
     billing,
     knownSecrets,
     modelNotice,
+    mcp,
   };
 }
 
@@ -1037,6 +1075,10 @@ function availableTools(permissions: AgentPermissions): ToolDefinition[] {
 
 function describeToolCall(name: string, args: Record<string, unknown>): string {
   const path = typeof args.path === 'string' ? args.path : '';
+  if (name.startsWith('mcp__')) {
+    const [, server, tool] = name.split('__');
+    return tool ? `MCP ${server} · ${tool}` : name;
+  }
   switch (name) {
     case 'read_file':
       return `Read ${path}`;
@@ -1067,6 +1109,41 @@ function upsertPlanStep(
   const existing = steps.find((s) => s.title === title);
   if (existing) existing.status = status;
   else steps.push({ id: newId(ID_PREFIX.task), title, status });
+}
+
+/**
+ * Executes one namespaced MCP tool call inside the run loop.
+ *
+ * Destructive tools (per the server's approval policy) come back as a
+ * `needsApproval` result — the same pause-and-ask flow builtin tools use — and
+ * the approval endpoint re-runs them through `callTool` once a human agrees.
+ * Output is already bounded by the manager (60 s timeout) and is redacted and
+ * truncated with the rest of the tool output before it reaches the model.
+ */
+/** Exported for tests: the approval gate and the manager hand-off. */
+export async function runMcpToolCall(
+  route: { serverId: string; toolName: string; requiresApproval: boolean },
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  if (route.requiresApproval) {
+    return {
+      output: '',
+      summary: 'Awaiting approval',
+      isError: false,
+      needsApproval: {
+        reason:
+          'This tool belongs to an MCP server and can change external state, so it needs a human go-ahead.',
+        preview: JSON.stringify(args, null, 2).slice(0, 2_000),
+      },
+    };
+  }
+
+  const { output, isError } = await callTool(route.serverId, route.toolName, args);
+  return {
+    output,
+    summary: `${route.toolName} (MCP)`,
+    isError,
+  };
 }
 
 /** ~3.8 characters per token is close enough for budgeting, and never lies high. */
