@@ -64,7 +64,10 @@ test('the workspace dialog shows the catalogue with license posture', async ({ p
   await openWorkspace(page);
 
   await page.getByRole('tab', { name: 'Terminal' }).click();
-  await page.getByRole('button', { name: 'CLI agents' }).click();
+  const terminalPanel = page.getByRole('tabpanel', { name: 'Terminal' });
+  // exact: the team switcher next to it can be named "CLI Agents E2E" and
+  // would substring-match otherwise.
+  await terminalPanel.getByRole('button', { name: 'CLI agents', exact: true }).click();
 
   const dialog = page.getByRole('dialog', { name: 'CLI agents' });
   await expect(dialog).toBeVisible({ timeout: 20_000 });
