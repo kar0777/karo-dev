@@ -417,7 +417,10 @@ export async function loadOverview(period: Period): Promise<OverviewData> {
       .select({
         totalUsers: sql<string>`(select count(*) from ${users})`,
         totalTeams: sql<string>`(select count(*) from ${teams})`,
-        newUsers: sql<string>`(select count(*) from ${users} where ${users.createdAt} >= ${from})`,
+        // ISO string, not a Date: inside a raw sql`` template the parameter
+        // reaches postgres.js untyped, and its serializer rejects Date
+        // objects (ERR_INVALID_ARG_TYPE) — the whole overview page 500s.
+        newUsers: sql<string>`(select count(*) from ${users} where ${users.createdAt} >= ${from.toISOString()})`,
       })
       .from(sql`(select 1) as one`),
     buildLossMaking(period),

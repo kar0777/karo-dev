@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ArrowUpRight, ShieldAlert, TrendingDown } from 'lucide-react';
 
 import { ChartFrame, GrowthChart, RunsChart } from '@/components/admin/charts';
+import { QuickActions } from '@/components/admin/quick-actions';
 import { PeriodPicker } from '@/components/admin/period-picker';
 import {
   AdminPanel,
@@ -68,6 +69,8 @@ export default async function AdminOverviewPage({
         description={`Revenue, cost and growth for the last ${period.days} days. Money is recognised revenue — subscriptions prorated over the window plus metered charges — not cash collected.`}
         actions={<PeriodPicker value={period.days} />}
       />
+
+      <QuickActions />
 
       {data.openIncidents.length > 0 ? (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger/30 bg-danger-soft px-4 py-3">
