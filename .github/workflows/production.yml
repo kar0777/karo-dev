@@ -47,6 +47,10 @@ env:
 jobs:
   migrate:
     name: Migrate database
+    # The hourly schedule exists for the maintenance tick only. Re-running
+    # migrations every hour woke the database around the clock (burning a free
+    # serverless-Postgres quota) and buried real failures in noise.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

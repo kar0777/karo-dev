@@ -43,7 +43,9 @@ const serverSchema = z.object({
   // ---- Data -------------------------------------------------------------
   DATABASE_URL: z.string().default('postgresql://karo:karo@localhost:5432/karo'),
   DATABASE_SSL: bool(false),
-  DATABASE_MAX_CONNECTIONS: int(10),
+  // On Vercel every function instance holds its own pool, so the default is
+  // small: many instances x 10 connections exhausts a free Neon/pooler quota.
+  DATABASE_MAX_CONNECTIONS: int(process.env.VERCEL ? 3 : 10),
 
   REDIS_URL: z.string().optional(),
 
